@@ -9,4 +9,4 @@ from . import \
     soot_foil, \
     specific_heat_matching, \
     uncertainty, \
-    spectral, \
+    spectral
