@@ -222,7 +222,8 @@ class CellSize:
             max_tries_znd=5,
             max_step_znd=1e-4,
             max_tries_cv=10,
-            cv_end_time=1e-6
+            cv_end_time=1,
+            max_step_cv=0.5
     ):
         # sdt import is here to avoid any module-level weirdness stemming from
         # Solution object modification
@@ -353,12 +354,27 @@ class CellSize:
         # Approximate effective activation energy for CV explosion
         tau_a = cv_out_0['ind_time']
         tau_b = cv_out_1['ind_time']
+
+        self.Tvn = out["T"].max()  # peak temp from ZND simulation
+
         if tau_a == 0 or tau_b == 0:
             self.activation_energy = 0
         else:
             self.activation_energy = 1 / self.Ts * (
                     np.log(tau_a / tau_b) / ((1 / temp_a) - (1 / temp_b))
             )
+
+        self.gavrikov_criteria = {
+            "Ea/RTps": self.activation_energy / ct.gas_constant / self.Ts,
+            "Tvn/T0": self.Tvn / self.T1
+        }
+        # see pg 32 of https://doi.org/10.1016/S0010-2180(99)00076-0
+        self.gavrikov_criteria["valid"] = all((
+            self.gavrikov_criteria["Ea/RTps"] <= 16,
+            self.gavrikov_criteria["Ea/RTps"] >= 3,
+            self.gavrikov_criteria["Tvn/T0"] <= 8,
+            self.gavrikov_criteria["Tvn/T0"] >= 1.5,
+        ))
 
         #  Find Gavrikov induction time based on 50% limiting species
         #  consumption, fuel for lean mixtures, oxygen for rich mixtures
