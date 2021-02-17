@@ -66,7 +66,8 @@ def wrapped_cvsolve(
         gas,
         sd,
         max_tries=5,
-        t_end=1e-6
+        t_end=1e-6,
+        max_step=1e-5,
 ):
     """
     Look jack, I don't have time for your `breaking` malarkey
@@ -84,6 +85,8 @@ def wrapped_cvsolve(
         how motivated are you
     t_end : float
         initial end time, which is doubled each iteration
+    max_step : float
+        maximum cvsolve step time
 
     Returns
     -------
@@ -104,7 +107,8 @@ def wrapped_cvsolve(
             try:
                 out = sd.cv.cvsolve(
                     gas,
-                    t_end=t_end
+                    t_end=t_end,
+                    max_step=max_step,
                 )
                 break
             except:  # noqa: E722
@@ -338,7 +342,8 @@ class CellSize:
             gas,
             sd,
             max_tries_cv,
-            cv_end_time
+            cv_end_time,
+            max_step_cv
         )
 
         temp_b = self.Ts * 0.98
@@ -348,7 +353,8 @@ class CellSize:
             gas,
             sd,
             max_tries_cv,
-            cv_end_time
+            cv_end_time,
+            max_step_cv
         )
 
         # Approximate effective activation energy for CV explosion
