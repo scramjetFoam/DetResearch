@@ -355,8 +355,6 @@ class CellSize:
         tau_a = cv_out_0['ind_time']
         tau_b = cv_out_1['ind_time']
 
-        self.Tvn = out["T"].max()  # peak temp from ZND simulation
-
         if tau_a == 0 or tau_b == 0:
             self.activation_energy = 0
         else:
@@ -364,9 +362,18 @@ class CellSize:
                     np.log(tau_a / tau_b) / ((1 / temp_a) - (1 / temp_b))
             )
 
+        # Tps should be post-shock temperature at 1.3 Dcj per Gavrikov
+        # noinspection PyPep8Naming
+        self.Tps_gav = sd.postshock.PostShock_fr(
+            cj_speed * 1.3,
+            initial_press,
+            initial_temp,
+            q,
+            self.mechanism
+        ).T
         self.gavrikov_criteria = {
-            "Ea/RTps": self.activation_energy / ct.gas_constant / self.Ts,
-            "Tvn/T0": self.Tvn / self.T1
+            "Ea/RTps": self.activation_energy / ct.gas_constant / self.Tps_gav,
+            "Tvn/T0": self.Ts / self.T1
         }
         # see pg 32 of https://doi.org/10.1016/S0010-2180(99)00076-0
         self.gavrikov_criteria["valid"] = all((
