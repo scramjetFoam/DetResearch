@@ -1,6 +1,6 @@
 import numpy as np
 import uncertainties as un
-from skimage import io
+from skimage import io, color
 from uncertainties import unumpy as unp
 
 from .uncertainty import add_uncertainty_terms, u_cell
@@ -31,12 +31,14 @@ def get_px_deltas_from_lines(
     deltas : np.array or unp.uarray
         triple point distances, in pixels.
     """
-    img = io.imread(img_path)
+    img = color.rgb2gray(io.imread(img_path))
     img_max = img.max()
-    deltas = np.array([])
-    for row in range(img.shape[0]):
-        diffs = np.diff(np.where(img[row] == img_max)[0])
-        deltas = np.append(deltas, diffs)
+    deltas = []
+    for i in range(img.shape[0]):
+        # todo: add row-based uncertainty
+        deltas.extend(_get_measurement_from_row(img[i], img_max))
+
+    deltas = np.array(deltas)
 
     if apply_uncertainty:
         uncert = add_uncertainty_terms([
@@ -49,6 +51,23 @@ def get_px_deltas_from_lines(
         )
 
     return deltas
+
+
+def _get_measurement_from_row(row, img_max):
+    row_locs = np.where(row == img_max)[0]
+    # get rid of adjacent pixels
+    # if two measurements are in adjacent pixels, this method selects the
+    # rightmost adjacent location and throws out the others (i.e. it only
+    # accepts measurements where the location is >1 away from the previous)
+    row_locs = row_locs[
+        np.abs(
+            np.diff(
+                [row_locs, np.roll(row_locs, -1)],
+                axis=0
+            )
+        ).flatten() > 1
+    ]
+    return np.diff(row_locs)
 
 
 def get_cell_size_from_deltas(
