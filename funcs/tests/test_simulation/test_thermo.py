@@ -166,3 +166,92 @@ def test_solution_with_inerts():
     # improperly built gas object will throw an error on forward_rate_constants
     # but not n_reactions
     assert len(test_gas.forward_rate_constants) == remaining_reactions
+
+
+class TestGetFASt:
+    def test_single_species_oxidizer(self):
+        assert np.isclose(thermo.get_f_a_st("H2", "O2"), 2)
+
+    def test_compound_oxidizer(self):
+        assert np.isclose(thermo.get_f_a_st("CH4", "O2:1 N2:3.76"), 1/9.52)
+
+    def test_air(self):
+        assert np.isclose(thermo.get_f_a_st("CH4", "air"), 1/9.52)
+
+
+def test_get_dil_mol_frac():
+    # 1 F + 2 O + 4 D
+    assert np.isclose(thermo.get_dil_mol_frac(1, 2, 4), 4/7)
+
+
+class TestGetEquivalenceRatio:
+    def test_lean(self):
+        # H2 + O2
+        assert np.isclose(thermo.get_equivalence_ratio(1, 1, 2), 0.5)
+
+    def test_unity(self):
+        # H2 + 1/2 O2
+        assert np.isclose(thermo.get_equivalence_ratio(1, 0.5, 2), 1)
+
+    def test_rich(self):
+        # 4 H2 + 1/2 O2
+        assert np.isclose(thermo.get_equivalence_ratio(4, 0.5, 2), 4)
+
+
+def test_get_adiabatic_temp():
+    aft = thermo.get_adiabatic_temp(
+        "gri30.cti",
+        "H2",
+        "O2:1 N2:3.76",
+        1,
+        "",
+        0,
+        300,
+        101325
+    )
+    assert np.isclose(aft, 2380.8062780784453)
+
+
+def test_match_adiabatic_temp():
+    mech = "gri30.cti"
+    fuel = "H2"
+    oxidizer = "O2"
+    dil_active = "CO2"
+    dil_inert = "AR"
+    phi = 1
+    dil_mf_active = 0.1
+    t_0 = 300
+    p_0 = 101325
+    dil_mf_inert = thermo.match_adiabatic_temp(
+        mech,
+        fuel,
+        oxidizer,
+        phi,
+        dil_active,
+        dil_mf_active,
+        dil_inert,
+        t_0,
+        p_0,
+    )
+    t_ad_active = thermo.get_adiabatic_temp(
+        mech,
+        fuel,
+        oxidizer,
+        phi,
+        dil_active,
+        dil_mf_active,
+        t_0,
+        p_0
+    )
+    t_ad_inert = thermo.get_adiabatic_temp(
+        mech,
+        fuel,
+        oxidizer,
+        phi,
+        dil_inert,
+        dil_mf_inert,
+        t_0,
+        p_0
+    )
+    assert np.isclose(t_ad_active, t_ad_inert)
+
