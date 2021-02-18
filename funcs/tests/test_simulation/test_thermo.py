@@ -1,5 +1,6 @@
 import cantera as ct
 import numpy as np
+import pytest
 
 from funcs.simulation import thermo
 
@@ -114,3 +115,54 @@ class TestDilutedSpeciesDict:
                 spec_dil["CO2"] + ar_adjusted
             ]
         )
+
+
+class TestEnforceSpeciesList:
+    def test_good_inputs(self):
+        test_inputs = [
+            'asdf',
+            ['asdf', 'ghjk'],
+            'ASDF',
+            ['ASDF', 'GHJK']
+        ]
+        good_results = [['ASDF'], ['ASDF', 'GHJK']] * 2
+
+        checks = []
+        for current_input, good in zip(test_inputs, good_results):
+            # noinspection PyProtectedMember
+            checks.append(
+                thermo._enforce_species_list(current_input) == good
+            )
+
+        assert all(checks)
+
+    @pytest.mark.parametrize(
+        'test_input',
+        [None, [None, None], 1, [0, 1, 2]]
+    )
+    def test_bad_input(self, test_input):
+        if isinstance(test_input, list):
+            current_type = [type(item) for item in test_input]
+        else:
+            current_type = type(test_input)
+        try:
+            # noinspection PyProtectedMember
+            thermo._enforce_species_list(test_input)
+        except TypeError as err:
+            assert str(err) == 'Bad species type: %s' % current_type
+
+
+def test_solution_with_inerts():
+    mechanism = 'gri30.cti'
+    inert = 'O'
+    known_gas = thermo.ORIGINAL_SOLUTION(mechanism)
+    remaining_reactions = known_gas.n_reactions - sum(
+        [inert in rxn.reactants or inert in rxn.products for
+         rxn in known_gas.reactions()]
+    )
+
+    test_gas = thermo.solution_with_inerts(mechanism, inert)
+    # use len(forward_rate_constants) rather than n_reactions because an
+    # improperly built gas object will throw an error on forward_rate_constants
+    # but not n_reactions
+    assert len(test_gas.forward_rate_constants) == remaining_reactions

@@ -1,5 +1,6 @@
 import sdtoolbox as sd
 
+import simulation.thermo
 from simulation import cell_size
 from simulation.sensitivity import database as db
 
@@ -78,7 +79,7 @@ def perform_study(
         db_lock
 ):
     CellSize = cell_size.CellSize()
-    gas = cell_size.solution_with_inerts(mech, inert)
+    gas = simulation.thermo.solution_with_inerts(mech, inert)
     gas.TP = init_temp, init_press
     gas.set_equivalence_ratio(
         equivalence,

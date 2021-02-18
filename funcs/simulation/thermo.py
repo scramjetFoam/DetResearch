@@ -2,6 +2,8 @@ import cantera as ct
 import numpy as np
 from scipy.optimize import minimize
 
+ORIGINAL_SOLUTION = ct.Solution
+
 
 def diluted_species_dict(
         spec,
@@ -347,3 +349,46 @@ if __name__ == '__main__':
         initial_pressure
     )
     print(matched_inert_mol_frac)
+
+
+def _enforce_species_list(species):
+    if isinstance(species, str):
+        species = [species.upper()]
+    elif hasattr(species, '__iter__') and \
+            all([isinstance(s, str) for s in species]):
+        species = [s.upper() for s in species]
+    else:
+        if hasattr(species, '__iter__'):
+            bad_type = [
+                type(item) for item in species if not isinstance(item, str)
+            ]
+        else:
+            bad_type = type(species)
+
+        raise TypeError('Bad species type: %s' % bad_type)
+
+    return species
+
+
+def solution_with_inerts(
+        mech,
+        inert_species
+):
+    inert_species = _enforce_species_list(inert_species)
+    species = ct.Species.listFromFile(mech)
+    reactions = []
+    for rxn in ct.Reaction.listFromFile(mech):
+        if not any([
+            s in list(rxn.reactants) + list(rxn.products)
+            for s in inert_species
+        ]):
+            reactions.append(rxn)
+
+    print(len(ct.Reaction.listFromFile(mech)))
+    print(len(reactions))
+    return ORIGINAL_SOLUTION(
+        thermo='IdealGas',
+        species=species,
+        reactions=reactions,
+        kinetics='GasKinetics'
+    )
