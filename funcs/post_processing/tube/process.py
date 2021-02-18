@@ -3,7 +3,6 @@ import os
 import string
 import warnings
 
-import cantera as ct
 import numpy as np
 import pandas as pd
 import uncertainties as un
@@ -13,6 +12,7 @@ from scipy.stats import t
 from tables import NoSuchNodeError
 from uncertainties import unumpy as unp
 
+from ...simulation import thermo
 from . import diodes
 from ..images import schlieren
 from ... import uncertainty
@@ -30,65 +30,6 @@ _SPATIAL_VARIATIONS = pd.read_csv(
         "spatial_variations.csv"
     )
 )
-
-
-def _get_f_a_st(
-        fuel="C3H8",
-        oxidizer="O2:1 N2:3.76",
-        mech="gri30.cti"
-):
-    """
-    Calculate the stoichiometric fuel/air ratio using Cantera. Calculates using
-    only x_fuel to allow for compound oxidizer (e.g. air)
-
-    Parameters
-    ----------
-    fuel : str
-    oxidizer : str
-    mech : str
-        mechanism file to use
-
-    Returns
-    -------
-    float
-        stoichiometric fuel/air ratio
-    """
-    if oxidizer.lower() == "air":
-        oxidizer = "O2:1 N2:3.76"
-
-    gas = ct.Solution(mech)
-    gas.set_equivalence_ratio(
-        1,
-        fuel,
-        oxidizer
-    )
-    x_fuel = gas.mole_fraction_dict()[fuel]
-    return x_fuel / (1 - x_fuel)
-
-
-def _get_dil_mol_frac(
-        p_fuel,
-        p_oxidizer,
-        p_diluent
-):
-    """
-    todo: move to thermo.py
-
-    Parameters
-    ----------
-    p_fuel : float or un.ufloat
-        Fuel partial pressure
-    p_oxidizer : float or un.ufloat
-        Oxidizer partial pressure
-    p_diluent : float or un.ufloat
-        Diluent partial pressure
-
-    Returns
-    -------
-    float or un.ufloat
-        Diluent mole fraction
-    """
-    return p_diluent / (p_fuel + p_oxidizer + p_diluent)
 
 
 def _collect_schlieren_dirs(
@@ -138,33 +79,6 @@ def _collect_schlieren_dirs(
         and os.path.exists(os.path.join(raw_dir, item, "frames"))
         and os.path.exists(os.path.join(raw_dir, item, "bg"))
     ])
-
-
-def _get_equivalence_ratio(
-        p_fuel,
-        p_oxidizer,
-        f_a_st
-):
-    """
-    todo: move to thermo.py
-
-    Simple equivalence ratio function
-
-    Parameters
-    ----------
-    p_fuel : float or un.ufloat
-        Partial pressure of fuel
-    p_oxidizer : float or un.ufloat
-        Partial pressure of oxidizer
-    f_a_st : float or un.ufloat
-        Stoichiometric fuel/air ratio
-
-    Returns
-    -------
-    float or un.ufloat
-        Mixture equivalence ratio
-    """
-    return p_fuel / p_oxidizer / f_a_st
 
 
 class _ProcessStructure0:
@@ -467,7 +381,7 @@ class _ProcessStructure0:
             df_tdms_pressure,
             kind="oxidizer"
         )
-        phi = _get_equivalence_ratio(p_fuel, p_oxidizer, f_a_st)
+        phi = thermo.get_equivalence_ratio(p_fuel, p_oxidizer, f_a_st)
 
         # gather temperature data
         loc_temp_tdms = os.path.join(
@@ -843,16 +757,16 @@ class _ProcessStructure1:
         )
 
         # calculate equivalence ratio and diluent mole fraction
-        phi = _get_equivalence_ratio(
+        phi = thermo.get_equivalence_ratio(
             p_fuel,
             p_oxidizer,
-            _get_f_a_st(
+            thermo.get_f_a_st(
                 fuel,
                 oxidizer_species,
                 mech
             )
         )
-        dil_mf = _get_dil_mol_frac(p_fuel, p_oxidizer, p_diluent)
+        dil_mf = thermo.get_dil_mol_frac(p_fuel, p_oxidizer, p_diluent)
 
         # get wave speed
         wave_speed = diodes.calculate_velocity(
@@ -1806,10 +1720,10 @@ class _ProcessStructure2:
 
         # equivalence ratio
         # from partials (fill.tdms) and nominal f/ox (conditions.csv)
-        phi = _get_equivalence_ratio(
+        phi = thermo.get_equivalence_ratio(
             partials["fuel"],
             partials["oxidizer"],
-            _get_f_a_st(
+            thermo.get_f_a_st(
                 nominal["fuel"],
                 nominal["oxidizer"],
                 mech

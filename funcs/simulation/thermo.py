@@ -392,3 +392,86 @@ def solution_with_inerts(
         reactions=reactions,
         kinetics='GasKinetics'
     )
+
+
+def get_f_a_st(
+        fuel="C3H8",
+        oxidizer="O2:1 N2:3.76",
+        mech="gri30.cti"
+):
+    """
+    Calculate the stoichiometric fuel/air ratio of an undiluted mixture using
+    Cantera. Calculates using only x_fuel to allow for compound oxidizer
+    (e.g. air)
+
+    Parameters
+    ----------
+    fuel : str
+    oxidizer : str
+    mech : str
+        mechanism file to use
+
+    Returns
+    -------
+    float
+        stoichiometric fuel/air ratio
+    """
+    if oxidizer.lower() == "air":
+        oxidizer = "O2:1 N2:3.76"
+
+    gas = ct.Solution(mech)
+    gas.set_equivalence_ratio(
+        1,
+        fuel,
+        oxidizer
+    )
+    x_fuel = gas.mole_fraction_dict()[fuel]
+    return x_fuel / (1 - x_fuel)
+
+
+def get_dil_mol_frac(
+        p_fuel,
+        p_oxidizer,
+        p_diluent
+):
+    """
+    Parameters
+    ----------
+    p_fuel : float or un.ufloat
+        Fuel partial pressure
+    p_oxidizer : float or un.ufloat
+        Oxidizer partial pressure
+    p_diluent : float or un.ufloat
+        Diluent partial pressure
+
+    Returns
+    -------
+    float or un.ufloat
+        Diluent mole fraction
+    """
+    return p_diluent / (p_fuel + p_oxidizer + p_diluent)
+
+
+def get_equivalence_ratio(
+        p_fuel,
+        p_oxidizer,
+        f_a_st
+):
+    """
+    Simple equivalence ratio function
+
+    Parameters
+    ----------
+    p_fuel : float or un.ufloat
+        Partial pressure of fuel
+    p_oxidizer : float or un.ufloat
+        Partial pressure of oxidizer
+    f_a_st : float or un.ufloat
+        Stoichiometric fuel/air ratio
+
+    Returns
+    -------
+    float or un.ufloat
+        Mixture equivalence ratio
+    """
+    return p_fuel / p_oxidizer / f_a_st
