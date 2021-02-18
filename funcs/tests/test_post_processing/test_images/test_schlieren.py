@@ -3,7 +3,7 @@ import os
 import numpy as np
 import pandas as pd
 
-import post_processing.images.schlieren as sc
+import funcs.post_processing.images.schlieren as sc
 
 BG_DIR = os.path.join(
     os.path.dirname(os.path.realpath(__file__)),

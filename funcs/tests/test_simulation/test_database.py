@@ -1,4 +1,4 @@
-import simulation.sensitivity.database as db
+import funcs.simulation.sensitivity.database as db
 import string
 import random
 import os

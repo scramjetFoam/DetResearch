@@ -16,7 +16,7 @@ from uncertainties import unumpy as unp
 from . import diodes
 from ..images import schlieren
 from ... import uncertainty
-from _dev import d_drive
+from ..._dev import d_drive
 
 _DIR = os.path.split(__file__)[0]
 _STRUCTURE_END_DATES = (

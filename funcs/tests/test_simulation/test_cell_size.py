@@ -1,4 +1,4 @@
-import simulation.cell_size as cs
+import funcs.simulation.cell_size as cs
 import numpy as np
 import cantera as ct
 import pytest
