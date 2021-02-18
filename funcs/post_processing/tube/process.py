@@ -12,11 +12,11 @@ from scipy.stats import t
 from tables import NoSuchNodeError
 from uncertainties import unumpy as unp
 
-from ...simulation import thermo
 from . import diodes
 from ..images import schlieren
 from ... import uncertainty
 from ...dir import d_drive
+from ...simulation import thermo
 
 _DIR = os.path.split(__file__)[0]
 _STRUCTURE_END_DATES = (

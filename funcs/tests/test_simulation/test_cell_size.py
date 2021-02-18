@@ -1,6 +1,7 @@
-import funcs.simulation.cell_size as cs
-import numpy as np
 import cantera as ct
+import numpy as np
+
+import funcs.simulation.cell_size as cs
 
 relTol = 1e-4
 absTol = 1e-6
@@ -175,7 +176,7 @@ class TestAgainstDemo:
         pert = 3
         pert_frac = 0.01
         inert = 'AR'
-        test = c(
+        c(
             base_mechanism='Mevel2017.cti',
             initial_temp=300,
             initial_press=101325,

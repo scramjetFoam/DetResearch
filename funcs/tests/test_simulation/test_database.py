@@ -1,13 +1,15 @@
-import funcs.simulation.sensitivity.database as db
-import string
-import random
-import os
-import sqlite3
-import pytest
 import inspect
-from numpy import isclose, allclose
+import os
+import random
+import sqlite3
+import string
 import uuid
+
 import cantera as ct
+import pytest
+from numpy import isclose, allclose
+
+import funcs.simulation.sensitivity.database as db
 
 
 def remove_stragglers():  # pragma: no cover

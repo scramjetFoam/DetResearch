@@ -1,6 +1,6 @@
 import os
-from funcs.post_processing.tube import process
 
+from funcs.post_processing.tube import process
 
 DIR_RAW = os.path.join(
     os.path.dirname(os.path.realpath(__file__)),

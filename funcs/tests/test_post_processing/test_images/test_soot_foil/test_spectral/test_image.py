@@ -1,5 +1,6 @@
 import numba
 import numpy as np
+
 from funcs.post_processing.images.soot_foil.spectral import image
 
 numba.NUMBA_DISABLE_JIT = 1
