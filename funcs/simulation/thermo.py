@@ -58,74 +58,6 @@ def diluted_species_dict(
     return spec
 
 
-def spec_heat_error(
-        inert_mol_frac,
-        active_mol_frac,
-        inert_diluent,
-        active_diluent,
-        undiluted_mixture,
-        init_temp,
-        init_press,
-        mech
-):
-    inert_gas = ct.Solution(mech)
-    active_gas = ct.Solution(mech)
-    inert_gas.TPX = (
-        init_temp,
-        init_press,
-        diluted_species_dict(
-            undiluted_mixture,
-            inert_diluent,
-            inert_mol_frac
-        )
-    )
-    active_gas.TPX = (
-        init_temp,
-        init_press,
-        diluted_species_dict(
-            undiluted_mixture,
-            active_diluent,
-            active_mol_frac
-        )
-    )
-    err_gamma = (inert_gas.cp / inert_gas.cv - active_gas.cp / active_gas.cv) \
-        / (inert_gas.cp / inert_gas.cv)
-    err_cp = 1 - inert_gas.cp / active_gas.cp
-    err_cv = 1 - inert_gas.cv / active_gas.cv
-
-    error = np.sqrt(np.sum(np.square([err_cp, err_gamma, err_cv])))
-
-    return error
-
-
-def match_specific_heat(
-        initial_mol_frac,
-        initial_diluent,
-        new_diluent,
-        undiluted_mixture,
-        init_temp,
-        init_press,
-        mech,
-        bounds=(0, 0.9999)
-):
-    best = minimize(
-        spec_heat_error,
-        np.array([initial_mol_frac]),
-        args=(
-            initial_mol_frac,
-            new_diluent,
-            initial_diluent,
-            undiluted_mixture,
-            init_temp,
-            init_press,
-            mech
-        ),
-        bounds=np.array([bounds])
-    )
-    new_mol_fraction = best.x[0]
-    return new_mol_fraction
-
-
 def get_adiabatic_temp(
         mech,
         fuel,
@@ -166,14 +98,19 @@ def get_adiabatic_temp(
     """
     gas = ct.Solution(mech)
     gas.set_equivalence_ratio(phi, fuel, oxidizer)
-    gas.TPX = (
-        init_temp,
-        init_press,
-        diluted_species_dict(
+    if (diluent.lower in ("none", "")) or np.isclose(diluent_mol_frac, 0):
+        spec = gas.mole_fraction_dict()
+    else:
+        spec = diluted_species_dict(
             gas.mole_fraction_dict(),
             diluent,
             diluent_mol_frac
         )
+
+    gas.TPX = (
+        init_temp,
+        init_press,
+        spec
     )
     gas.equilibrate("HP")
     return gas.T
@@ -324,31 +261,6 @@ def match_adiabatic_temp(
         tol=tol
     )
     return best.x[0]
-
-
-if __name__ == '__main__':
-    mechanism = "gri30.cti"
-    initial_temperature = 300
-    initial_pressure = ct.one_atm
-    mixture_fuel = "C3H8"
-    mixture_oxidizer = "O2:1 N2:3.76"
-    mixture_phi = 1
-    mixture_active_diluent_mol_frac = 0.02
-    mixture_active_diluent = "CO2"
-    mixture_inert_diluent = "N2"
-
-    matched_inert_mol_frac = match_adiabatic_temp(
-        mechanism,
-        mixture_fuel,
-        mixture_oxidizer,
-        mixture_phi,
-        mixture_active_diluent,
-        mixture_active_diluent_mol_frac,
-        mixture_inert_diluent,
-        initial_temperature,
-        initial_pressure
-    )
-    print(matched_inert_mol_frac)
 
 
 def _enforce_species_list(species):
