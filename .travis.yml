@@ -28,6 +28,7 @@ install:
     - rm -rf SDT
 
 script:
+    - NUMBA_DISABLE_JIT=1
     - pytest -vv --cov=./funcs;
 
 after_success:
