@@ -3,7 +3,7 @@ import uncertainties as un
 from skimage import io, color
 from uncertainties import unumpy as unp
 
-from .uncertainty import add_uncertainty_terms, u_cell
+from uncertainty import add_uncertainty_terms, u_cell
 
 u_cell = u_cell["soot_foil"]
 

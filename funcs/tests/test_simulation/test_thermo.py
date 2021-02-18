@@ -1,7 +1,7 @@
 import cantera as ct
 import numpy as np
 
-from .. import specific_heat_matching as shm
+from funcs.simulation import thermo
 
 
 class TestDilutedSpeciesDict:
@@ -11,7 +11,7 @@ class TestDilutedSpeciesDict:
         gas.set_equivalence_ratio(1, "H2", "O2")
         spec = gas.mole_fraction_dict()
         f_a_orig = spec["H2"] / spec["O2"]
-        spec_dil = shm.diluted_species_dict(
+        spec_dil = thermo.diluted_species_dict(
             gas.mole_fraction_dict(),
             "CO2",
             dil_frac
@@ -36,7 +36,7 @@ class TestDilutedSpeciesDict:
         gas.set_equivalence_ratio(1, "H2", "O2")
         spec = gas.mole_fraction_dict()
         f_a_orig = spec["H2"] / spec["O2"]
-        spec_dil = shm.diluted_species_dict(
+        spec_dil = thermo.diluted_species_dict(
             gas.mole_fraction_dict(),
             "CO2:{:d} AR:{:d}".format(mol_co2, mol_ar),
             dil_frac
@@ -64,7 +64,7 @@ class TestDilutedSpeciesDict:
         gas.set_equivalence_ratio(1, "H2:1", "O2:1 AR:{:d}".format(ox_diluent))
         spec = gas.mole_fraction_dict()
         f_a_orig = spec["H2"] / spec["O2"]
-        spec_dil = shm.diluted_species_dict(
+        spec_dil = thermo.diluted_species_dict(
             gas.mole_fraction_dict(),
             "CO2:{:d} AR:{:d}".format(mol_co2, mol_ar),
             dil_frac
@@ -94,7 +94,7 @@ class TestDilutedSpeciesDict:
         gas.set_equivalence_ratio(1, "H2:1", "O2:1 AR:{:d}".format(ox_diluent))
         spec = gas.mole_fraction_dict()
         f_a_orig = spec["H2"] / spec["O2"]
-        spec_dil = shm.diluted_species_dict(
+        spec_dil = thermo.diluted_species_dict(
             gas.mole_fraction_dict(),
             "CO2:{:d} AR:{:d}".format(mol_co2, mol_ar),
             dil_frac

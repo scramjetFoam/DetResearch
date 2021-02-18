@@ -13,9 +13,10 @@ from scipy.stats import t
 from tables import NoSuchNodeError
 from uncertainties import unumpy as unp
 
-from . import diodes, schlieren, uncertainty
-from ._dev import d_drive
-from .diodes import find_diode_data, calculate_velocity
+from . import diodes
+from ..images import schlieren
+from ... import uncertainty
+from _dev import d_drive
 
 _DIR = os.path.split(__file__)[0]
 _STRUCTURE_END_DATES = (
@@ -25,7 +26,7 @@ _STRUCTURE_END_DATES = (
 _SPATIAL_VARIATIONS = pd.read_csv(
     os.path.join(
         _DIR,
-        "data",
+        "../../data",
         "spatial_variations.csv"
     )
 )
@@ -71,6 +72,7 @@ def _get_dil_mol_frac(
         p_diluent
 ):
     """
+    todo: move to thermo.py
 
     Parameters
     ----------
@@ -144,6 +146,8 @@ def _get_equivalence_ratio(
         f_a_st
 ):
     """
+    todo: move to thermo.py
+
     Simple equivalence ratio function
 
     Parameters
@@ -568,7 +572,7 @@ class _ProcessStructure1:
         ]
         df_tests = df_tests.merge(df_schlieren, on="shot", how="left")
         df_diode_locs = pd.DataFrame(columns=["shot", "diodes"])
-        df_diode_locs["diodes"] = find_diode_data(dir_data)
+        df_diode_locs["diodes"] = diodes.find_diode_data(dir_data)
         df_diode_locs["shot"] = [
             int(
                 os.path.split(
@@ -851,7 +855,7 @@ class _ProcessStructure1:
         dil_mf = _get_dil_mol_frac(p_fuel, p_oxidizer, p_diluent)
 
         # get wave speed
-        wave_speed = calculate_velocity(
+        wave_speed = diodes.calculate_velocity(
             test_time_row["diodes"],
             diode_spacing=diode_spacing
         )[0]
@@ -2057,7 +2061,7 @@ def process_multiple_days(
     with pd.HDFStore(
         os.path.join(
             _DIR,
-            "data",
+            "../../data",
             "tube_data_template.h5"
         ),
         "r"

@@ -1,10 +1,7 @@
-import funcs.cell_size as cs
+import simulation.cell_size as cs
 import numpy as np
 import cantera as ct
 import pytest
-from time import time
-import funcs.database as db
-from uuid import uuid4
 
 relTol = 1e-4
 absTol = 1e-6
@@ -254,7 +251,7 @@ class TestAgainstDemo:
 
 if __name__ == '__main__':  # pragma: no cover
     import subprocess
-    from funcs.tests.test_database import remove_stragglers
+    from tests.test_simulation.test_database import remove_stragglers
     try:
         subprocess.check_call(
             'pytest test_cell_size.py -vv --noconftest --cov '

@@ -1,4 +1,4 @@
-import funcs.database as db
+import simulation.sensitivity.database as db
 import string
 import random
 import os
@@ -11,7 +11,7 @@ import cantera as ct
 
 
 def remove_stragglers():  # pragma: no cover
-    stragglers = set(file for file in os.listdir('.') if '.sqlite' in file)
+    stragglers = set(file for file in os.listdir('..') if '.sqlite' in file)
     for file in stragglers:
         os.remove(file)
 

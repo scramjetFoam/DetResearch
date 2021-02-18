@@ -6,7 +6,7 @@ from skimage import io
 from skimage.color import rgb2gray
 from skimage.filters import sobel
 
-from . import image
+from post_processing.images.soot_foil.spectral import image
 
 
 def run(

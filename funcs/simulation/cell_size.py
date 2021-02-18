@@ -15,7 +15,7 @@ http://shepherd.caltech.edu/EDL/PublicResources/sdt/
 import cantera as ct
 import numpy as np
 
-from .specific_heat_matching import diluted_species_dict
+from funcs.simulation.thermo import diluted_species_dict
 
 OriginalSolution = ct.Solution
 
@@ -588,7 +588,3 @@ class CellSize:
         """
         return 29 * self.induction_length['Westbrook']
 
-
-if __name__ == '__main__':  # pragma: no cover
-    import subprocess
-    subprocess.check_call('pytest -vv tests/test_cell_size.py')

@@ -10,8 +10,8 @@ from matplotlib import widgets
 from skimage import io
 from skimage.filters import sobel_v
 
-from ._dev import d_drive, convert_dir_to_local
-from .uncertainty import add_uncertainty_terms, u_cell
+from _dev import d_drive, convert_dir_to_local
+from uncertainty import add_uncertainty_terms, u_cell
 
 u_cell = u_cell["schlieren"]
 
@@ -233,7 +233,7 @@ def _maximize_window():
 def collect_spatial_calibration(
         spatial_file,
         line_color="r",
-        marker_length_mm=0.2*25.4,
+        marker_length_mm=5.08,
         px_only=False,
         apply_uncertainty=True,
         plot_window=None,
