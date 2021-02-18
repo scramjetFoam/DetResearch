@@ -11,8 +11,6 @@ CREATED BY:
 """
 
 import os
-from tkinter import Tk
-from tkinter import filedialog as fd
 
 import numpy as np
 import pandas as pd
@@ -45,13 +43,6 @@ def find_diode_data(
     list
         List of diode data file locations
     """
-    # have user browse for directory if none was given
-    if not len(data_directory):
-        Tk().withdraw()
-        data_directory = fd.askdirectory(
-            initialdir=os.getcwd()
-        )
-
     # get a list of directories containing base file name
     diode_data_locations = []
     for location in os.walk(data_directory):
