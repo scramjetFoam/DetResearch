@@ -1,5 +1,5 @@
 """
-Functions for reorganizing a file's imports nicely
+Functions for converting directory strings between windows and linux
 """
 import os
 import platform

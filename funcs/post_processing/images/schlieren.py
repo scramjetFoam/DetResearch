@@ -10,7 +10,7 @@ from matplotlib import widgets
 from skimage import io
 from skimage.filters import sobel_v
 
-from ..._dev import d_drive, convert_dir_to_local
+from ...dir import d_drive, convert_dir_to_local
 from ...uncertainty import add_uncertainty_terms, u_cell
 
 u_cell = u_cell["schlieren"]
