@@ -132,6 +132,7 @@ dependencies:
   - zlib=1.2.11=h7b6447c_3
   - zstd=1.4.5=h6597ccf_2
   - pip:
+    - pyqt5==5.14.2
     - 3to2==1.1.1
     - alabaster==0.7.12
     - appdirs==1.4.3
@@ -183,9 +184,9 @@ dependencies:
     - jupyter-latex-envs==1.4.6
     - jupyter-nbextensions-configurator==0.4.1
     - jupyter-server==1.0.6
-    - jupyterlab==1.2.6
+    - jupyterlab==3.0.7
     - jupyterlab-pygments==0.1.2
-    - jupyterlab-server==1.0.6
+    - jupyterlab-server==2.2.0
     - jupyterthemes==0.20.0
     - lesscpy==0.14.0
     - libclang-py3==3.9.0

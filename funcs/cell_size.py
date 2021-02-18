@@ -66,7 +66,8 @@ def wrapped_cvsolve(
         gas,
         sd,
         max_tries=5,
-        t_end=1e-6
+        t_end=1e-6,
+        max_step=1e-5,
 ):
     """
     Look jack, I don't have time for your `breaking` malarkey
@@ -84,6 +85,8 @@ def wrapped_cvsolve(
         how motivated are you
     t_end : float
         initial end time, which is doubled each iteration
+    max_step : float
+        maximum cvsolve step time
 
     Returns
     -------
@@ -104,7 +107,8 @@ def wrapped_cvsolve(
             try:
                 out = sd.cv.cvsolve(
                     gas,
-                    t_end=t_end
+                    t_end=t_end,
+                    max_step=max_step,
                 )
                 break
             except:  # noqa: E722
@@ -222,7 +226,8 @@ class CellSize:
             max_tries_znd=5,
             max_step_znd=1e-4,
             max_tries_cv=10,
-            cv_end_time=1e-6
+            cv_end_time=1,
+            max_step_cv=0.5
     ):
         # sdt import is here to avoid any module-level weirdness stemming from
         # Solution object modification
@@ -337,7 +342,8 @@ class CellSize:
             gas,
             sd,
             max_tries_cv,
-            cv_end_time
+            cv_end_time,
+            max_step_cv
         )
 
         temp_b = self.Ts * 0.98
@@ -347,18 +353,41 @@ class CellSize:
             gas,
             sd,
             max_tries_cv,
-            cv_end_time
+            cv_end_time,
+            max_step_cv
         )
 
         # Approximate effective activation energy for CV explosion
         tau_a = cv_out_0['ind_time']
         tau_b = cv_out_1['ind_time']
+
         if tau_a == 0 or tau_b == 0:
             self.activation_energy = 0
         else:
             self.activation_energy = 1 / self.Ts * (
                     np.log(tau_a / tau_b) / ((1 / temp_a) - (1 / temp_b))
             )
+
+        # Tps should be post-shock temperature at 1.3 Dcj per Gavrikov
+        # noinspection PyPep8Naming
+        self.Tps_gav = sd.postshock.PostShock_fr(
+            cj_speed * 1.3,
+            initial_press,
+            initial_temp,
+            q,
+            self.mechanism
+        ).T
+        self.gavrikov_criteria = {
+            "Ea/RTps": self.activation_energy / ct.gas_constant / self.Tps_gav,
+            "Tvn/T0": self.Ts / self.T1
+        }
+        # see pg 32 of https://doi.org/10.1016/S0010-2180(99)00076-0
+        self.gavrikov_criteria["valid"] = all((
+            self.gavrikov_criteria["Ea/RTps"] <= 16,
+            self.gavrikov_criteria["Ea/RTps"] >= 3,
+            self.gavrikov_criteria["Tvn/T0"] <= 8,
+            self.gavrikov_criteria["Tvn/T0"] >= 1.5,
+        ))
 
         #  Find Gavrikov induction time based on 50% limiting species
         #  consumption, fuel for lean mixtures, oxygen for rich mixtures
