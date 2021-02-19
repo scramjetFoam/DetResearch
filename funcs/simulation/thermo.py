@@ -296,8 +296,6 @@ def solution_with_inerts(
         ]):
             reactions.append(rxn)
 
-    print(len(ct.Reaction.listFromFile(mech)))
-    print(len(reactions))
     return ORIGINAL_SOLUTION(
         thermo='IdealGas',
         species=species,
