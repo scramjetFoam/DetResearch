@@ -76,10 +76,13 @@ def perform_study(
         inert,
         perturbation_fraction,
         perturbed_reaction_no,
-        db_lock
+        # db_lock
 ):
     CellSize = cell_size.CellSize()
-    gas = simulation.thermo.solution_with_inerts(mech, inert)
+    if inert is not None:
+        gas = simulation.thermo.solution_with_inerts(mech, inert)
+    else:
+        gas = simulation.thermo.ct.Solution(mech)
     gas.TP = init_temp, init_press
     gas.set_equivalence_ratio(
         equivalence,
