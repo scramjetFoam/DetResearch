@@ -77,6 +77,7 @@ def wrapped_cvsolve(
                 t_end=t_end
             )
         t_end *= 2
+        max_step *= 2
     return out
 
 
@@ -544,4 +545,3 @@ class CellSize:
             Estimated cell size (m)
         """
         return 29 * self.induction_length['Westbrook']
-
