@@ -1,8 +1,14 @@
-from multiprocessing import Pool, Lock
-from funcs.sensitivity import init, perform_study
-from tqdm import tqdm
-import funcs.database as db
+import multiprocessing as mp
+
 import cantera as ct
+from tqdm import tqdm
+
+import funcs.simulation.sensitivity.database as db
+# noinspection PyUnresolvedReferences
+from funcs.simulation.sensitivity import istarmap
+from funcs.simulation.sensitivity.analysis import perform_study, init
+
+
 # from itertools import permutations
 # import numpy as np
 # import cantera as ct
@@ -56,20 +62,20 @@ if __name__ == '__main__':
     import warnings
     warnings.simplefilter('ignore')
     # inert = 'AR'
-    _inert = 'None'
+    _inert = None
     # _mechanism = 'Mevel2017.cti'
     # _mechanism = 'aramco2.cti'
     _inert_species = [_inert]
-    _mechanism = "gri30.cti"
+    _mechanism = "gri30_highT.cti"
     _initial_temp = 300
     _initial_press = 101325
     _equivalence = 1
-    _fuel = 'C3H8'
-    _oxidizer = 'O2:1 N2:3.76'
+    _fuel = 'CH4'
+    _oxidizer = 'N2O'
     # diluent = 'AR'
-    _diluent = 'None'
-    _diluent_mol_frac = 0
-    _perturbation_fraction = 1e-2
+    _diluent = 'CO2'
+    _diluent_mol_frac = 0.1
+    _perturbation_fraction = 1e-3
 
     t = db.Table(
         'sensitivity.sqlite',
@@ -98,44 +104,48 @@ if __name__ == '__main__':
         ]):
             reactions.append(rxn)
 
-    pbar = tqdm(total=len(reactions))
+    # pbar = tqdm(total=len(reactions))
 
-    _lock = Lock()
-    # p = Pool(initializer=init, initargs=(_lock,))
-    # p.starmap(
-    #     perform_study,
-    #     [
-    #         [
-    #             # pbar,
-    #             _mechanism,
-    #             _initial_temp,
-    #             _initial_press,
-    #             _equivalence,
-    #             _fuel,
-    #             _oxidizer,
-    #             _diluent,
-    #             _diluent_mol_frac,
-    #             _inert,
-    #             _perturbation_fraction,
-    #             i,
-    #             _lock
-    #         ] for i in range(len(reactions))
-    #     ]
-    # )
-    for i in range(len(reactions)):
-        perform_study(
-            _mechanism,
-            _initial_temp,
-            _initial_press,
-            _equivalence,
-            _fuel,
-            _oxidizer,
-            _diluent,
-            _diluent_mol_frac,
-            _inert,
-            _perturbation_fraction,
-            i,
-            _lock
-        )
-        pbar.update(1)
+    _lock = mp.Lock()
+    p = mp.Pool(initializer=init, initargs=(_lock,))
+    for _ in tqdm(
+        p.istarmap(
+            perform_study,
+            [
+                [
+                    # pbar,
+                    _mechanism,
+                    _initial_temp,
+                    _initial_press,
+                    _equivalence,
+                    _fuel,
+                    _oxidizer,
+                    _diluent,
+                    _diluent_mol_frac,
+                    _inert,
+                    _perturbation_fraction,
+                    i,
+                    # _lock
+                ] for i in range(len(reactions))
+            ]
+        ), total=len(reactions)
+    ):
+        pass
+    p.close()
+    # for i in range(len(reactions)):
+    #     perform_study(
+    #         _mechanism,
+    #         _initial_temp,
+    #         _initial_press,
+    #         _equivalence,
+    #         _fuel,
+    #         _oxidizer,
+    #         _diluent,
+    #         _diluent_mol_frac,
+    #         _inert,
+    #         _perturbation_fraction,
+    #         i,
+    #         _lock
+    #     )
+    #     pbar.update(1)
     print("woo!")

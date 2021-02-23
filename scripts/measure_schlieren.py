@@ -2,7 +2,7 @@
 #       Measure, calibrate, and store all schlieren shots on a given day       #
 ################################################################################
 
-from funcs import schlieren
+from post_processing.images import schlieren
 import pandas as pd
 import numpy as np
 import uncertainties as un
