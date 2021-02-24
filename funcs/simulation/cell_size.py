@@ -184,8 +184,8 @@ class CellSize:
             max_tries_znd=5,
             max_step_znd=1e-4,
             max_tries_cv=10,
-            cv_end_time=1,
-            max_step_cv=0.5
+            cv_end_time=1e-6,
+            max_step_cv=5e-7
     ):
         # sdt import is here to avoid any module-level weirdness stemming from
         # Solution object modification
