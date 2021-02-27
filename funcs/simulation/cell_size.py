@@ -67,14 +67,15 @@ def wrapped_cvsolve(
                     t_end=t_end,
                     max_step=max_step,
                 )
-                break
+                return out
             except:  # noqa: E722
                 pass
         else:
             # let it break if it's gonna break after max tries
             out = sd.cv.cvsolve(
                 gas,
-                t_end=t_end
+                t_end=t_end,
+                max_step=max_step,
             )
         t_end *= 2
         max_step *= 2
@@ -110,7 +111,7 @@ def wrapped_zndsolve(
                     t_end=t_end,
                     max_step=max_step
                 )
-                break
+                return out
             except ct.CanteraError:
                 pass
             except ValueError:
