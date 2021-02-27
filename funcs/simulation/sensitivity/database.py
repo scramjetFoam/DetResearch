@@ -398,15 +398,7 @@ class Table:
 
     def _update_test_row(
             self,
-            mechanism,
-            initial_temp,
-            initial_press,
-            fuel,
-            oxidizer,
-            equivalence,
-            diluent,
-            diluent_mol_frac,
-            inert,
+            rxn_table_id,
             cj_speed,
             ind_len_west,
             ind_len_gav,
@@ -421,22 +413,8 @@ class Table:
 
         Parameters
         ----------
-        mechanism : str
-            Mechanism used for the desired row's computation
-        initial_temp : float
-            Initial temperature for the desired row, in Kelvin
-        initial_press : float
-            Initial pressure for the desired row, in Pascals
-        fuel : str
-            Fuel used in the desired row
-        oxidizer : str
-            Oxidizer used in the desired row
-        equivalence : float
-            Equivalence ratio for the desired row
-        diluent : str
-            Diluent used in the desired row
-        diluent_mol_frac : float
-            Mole fraction of diluent used in the desired row
+        rxn_table_id:
+            Reaction table ID corresponding to updated row
         cj_speed : float
             CJ speed to update
         ind_len_west : float
@@ -466,26 +444,9 @@ class Table:
                     cell_size_gav = :cell_size_gav,
                     cell_size_ng = :cell_size_ng
                 WHERE
-                    mechanism = :mechanism AND
-                    initial_temp = :initial_temp AND
-                    initial_press = :initial_press AND
-                    equivalence = :equivalence AND
-                    fuel = :fuel AND
-                    oxidizer = :oxidizer AND
-                    diluent = :diluent AND
-                    diluent_mol_frac = :diluent_mol_frac AND
-                    inert = :inert
+                    rxn_table_id = :rxn_table_id
                 """.format(self.table_name),
                 {
-                    'mechanism': mechanism,
-                    'initial_temp': initial_temp,
-                    'initial_press': initial_press,
-                    'fuel': fuel,
-                    'oxidizer': oxidizer,
-                    'equivalence': equivalence,
-                    'diluent': diluent,
-                    'diluent_mol_frac': diluent_mol_frac,
-                    'inert': inert,
                     'cj_speed': cj_speed,
                     'ind_len_west': ind_len_west,
                     'ind_len_gav': ind_len_gav,
@@ -493,8 +454,10 @@ class Table:
                     'cell_size_west': cell_size_west,
                     'cell_size_gav': cell_size_gav,
                     'cell_size_ng': cell_size_ng,
+                    'rxn_table_id': rxn_table_id
                 }
             )
+            con.commit()
 
     def _update_pert_row(
             self,
@@ -574,6 +537,7 @@ class Table:
                     'sens_cell_size_ng': sens_cell_size_ng,
                 }
             )
+            con.commit()
 
     def store_test_row(
             self,
@@ -622,7 +586,7 @@ class Table:
             Diluent used in the current row
         diluent_mol_frac : float
             Mole fraction of diluent used in the current row
-        inert : str
+        inert : str or None
             Specie to make inert by removing every reaction where it is a
             reactant or product
         overwrite_existing : bool
@@ -675,15 +639,7 @@ class Table:
                     inert=inert
                 )['rxn_table_id']
                 self._update_test_row(
-                    mechanism=mechanism,
-                    initial_temp=initial_temp,
-                    initial_press=initial_press,
-                    fuel=fuel,
-                    oxidizer=oxidizer,
-                    equivalence=equivalence,
-                    diluent=diluent,
-                    diluent_mol_frac=diluent_mol_frac,
-                    inert=inert,
+                    rxn_table_id=rxn_table_id,
                     cj_speed=cj_speed,
                     ind_len_west=ind_len_west,
                     ind_len_gav=ind_len_gav,
@@ -1051,7 +1007,7 @@ class Table:
             Diluent to search for
         diluent_mol_frac : float
             Mole fraction of diluent to search for
-        inert : str
+        inert : str or None
             Specie to make inert by removing every reaction where it is a
             reactant or product
 

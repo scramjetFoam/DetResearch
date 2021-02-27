@@ -175,9 +175,9 @@ class TestTable:
     def test__create_test_table(self):
         test_db = generate_db_name()
         test_table_name = 'test_table'
-        FakeTable = self.FakeTable
-        FakeTable.columns = db.Table.test_columns
-        test_table = FakeTable(
+        fake_table = self.FakeTable
+        fake_table.columns = db.Table.test_columns
+        test_table = fake_table(
             test_db,
             test_table_name,
             allow_create=True
@@ -323,7 +323,7 @@ class TestTable:
         test_rows = test_table.fetch_test_rows()
         assert all([
             not set(db.Table._test_table_args)
-                .difference(set(test_rows.keys())),
+            .difference(set(test_rows.keys())),
             *[item == [] for item in test_rows.values()]
         ])
 
@@ -450,16 +450,9 @@ class TestTable:
             'cell_size_gav': 5,
             'cell_size_ng': 6
         }
+        rxn_table_id = test_table.store_test_row(**kwargs_init)
         kwargs_repl = {
-            'mechanism': 'gri30.cti',
-            'initial_temp': 300,
-            'initial_press': 101325,
-            'fuel': 'CH4',
-            'oxidizer': 'N2O',
-            'equivalence': 1,
-            'diluent': 'N2',
-            'diluent_mol_frac': 0.1,
-            'inert': 'None',
+            'rxn_table_id': rxn_table_id,
             'cj_speed': 2112,
             'ind_len_west': 2.1,
             'ind_len_gav': 2.2,
@@ -468,17 +461,16 @@ class TestTable:
             'cell_size_gav': 2.5,
             'cell_size_ng': 2.6
         }
-        test_table.store_test_row(**kwargs_init)
         test_table._update_test_row(**kwargs_repl)
         test_rows = test_table.fetch_test_rows()
         checks = []
         for key, value in test_rows.items():
-            if 'date' not in key and 'rxn_table_id' not in key:
-                if (isinstance(kwargs_repl[key], str)
-                        or isinstance(kwargs_repl[key], int)):
-                    checks.append(kwargs_repl[key] == value[0])
+            if 'date' not in key and rxn_table_id not in key:
+                check_val = kwargs_repl.get(key, kwargs_init.get(key))
+                if isinstance(check_val, str) or isinstance(check_val, int):
+                    checks.append(check_val == value[0])
                 else:
-                    checks.append(isclose(kwargs_repl[key], value[0]))
+                    checks.append(isclose(check_val, value[0]))
         assert all(checks)
 
     @pytest.mark.filterwarnings('ignore')
