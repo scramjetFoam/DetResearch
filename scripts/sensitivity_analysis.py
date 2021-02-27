@@ -8,56 +8,6 @@ import funcs.simulation.sensitivity.database as db
 from funcs.simulation.sensitivity import istarmap
 from funcs.simulation.sensitivity.analysis import perform_study, init
 
-
-# from itertools import permutations
-# import numpy as np
-# import cantera as ct
-
-
-# fuels = {'CH4', 'C3H8'}
-# oxidizers = {'N2O'}
-# equivs = {0.4, 0.7, 1.0}
-# init_pressures = {101325.}
-# init_temps = {300}
-# dilution_numbers = np.array([1, 5.5, 10], dtype=float)
-# dilution = {
-#     'None': [0],
-#     'CO2': dilution_numbers * 1e-2,
-#     'NO': dilution_numbers * 1e-4
-# }
-
-def study_with_progress_bar(
-        progress_bar,
-        mechanism,
-        initial_temp,
-        initial_press,
-        equivalence,
-        fuel,
-        oxidizer,
-        diluent,
-        diluent_mol_frac,
-        inert,
-        perturbation_fraction,
-        rxn_no,
-        lock
-):
-    perform_study(
-        mechanism,
-        initial_temp,
-        initial_press,
-        equivalence,
-        fuel,
-        oxidizer,
-        diluent,
-        diluent_mol_frac,
-        inert,
-        perturbation_fraction,
-        rxn_no,
-        lock
-    )
-    progress_bar.update(1)
-
-
 if __name__ == '__main__':
     import warnings
     warnings.simplefilter('ignore')
@@ -74,11 +24,12 @@ if __name__ == '__main__':
     _oxidizer = 'N2O'
     # diluent = 'AR'
     _diluent = 'CO2'
-    _diluent_mol_frac = 0.1
-    _perturbation_fraction = 1e-3
+    _diluent_mol_frac = 0.2
+    _perturbation_fraction = 1e-2
+    db_name = "sensitivity_2.sqlite"
 
     t = db.Table(
-        'sensitivity.sqlite',
+        db_name,
         'data'
     )
     exist_check = t.fetch_test_rows(
@@ -92,8 +43,6 @@ if __name__ == '__main__':
         diluent_mol_frac=_diluent_mol_frac,
         inert=_inert
     )['rxn_table_id']
-    # if len(exist_check) > 0:
-    #     t.delete_test(exist_check[0])
 
     reactions = []
     # noinspection PyCallByClass,PyArgumentList
@@ -104,34 +53,37 @@ if __name__ == '__main__':
         ]):
             reactions.append(rxn)
 
-    # pbar = tqdm(total=len(reactions))
-
+    # PARALLEL -- remove _lock to args in cell_size.CellSize
     _lock = mp.Lock()
-    p = mp.Pool(initializer=init, initargs=(_lock,))
-    for _ in tqdm(
-        p.istarmap(
-            perform_study,
-            [
+    n_rxns = len(reactions)
+    with mp.Pool(initializer=init, initargs=(_lock,)) as p:
+        for _ in tqdm(
+            p.istarmap(
+                perform_study,
                 [
-                    # pbar,
-                    _mechanism,
-                    _initial_temp,
-                    _initial_press,
-                    _equivalence,
-                    _fuel,
-                    _oxidizer,
-                    _diluent,
-                    _diluent_mol_frac,
-                    _inert,
-                    _perturbation_fraction,
-                    i,
-                    # _lock
-                ] for i in range(len(reactions))
-            ]
-        ), total=len(reactions)
-    ):
-        pass
-    p.close()
+                    [
+                        _mechanism,
+                        _initial_temp,
+                        _initial_press,
+                        _equivalence,
+                        _fuel,
+                        _oxidizer,
+                        _diluent,
+                        _diluent_mol_frac,
+                        _inert,
+                        _perturbation_fraction,
+                        i,
+                        db_name,
+                    ] for i in range(n_rxns)
+                ]
+            ),
+            total=n_rxns,
+            colour="499c54"
+        ):
+            pass
+
+    # SERIAL -- add _lock to args in cell_size.CellSize
+    # pbar = tqdm(total=n_rxns)
     # for i in range(len(reactions)):
     #     perform_study(
     #         _mechanism,
