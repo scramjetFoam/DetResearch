@@ -76,9 +76,10 @@ def perform_study(
         inert,
         perturbation_fraction,
         perturbed_reaction_no,
+        db_name,
         # db_lock
 ):
-    CellSize = cell_size.CellSize()
+    cs = cell_size.CellSize()
     if inert is not None:
         gas = simulation.thermo.solution_with_inerts(mech, inert)
     else:
@@ -89,7 +90,12 @@ def perform_study(
         fuel,
         oxidizer
     )
-    db_name = 'sensitivity.sqlite'
+    spec = simulation.thermo.diluted_species_dict(
+        gas.mole_fraction_dict(),
+        diluent,
+        diluent_mol_frac
+    )
+    gas.X = spec
     table_name = 'data'
     current_table = db.Table(
         database=db_name,
@@ -179,7 +185,7 @@ def perform_study(
         )
         if not stored_base_calcs:
             # calculate base cell size
-            base_cell_calcs = CellSize(
+            base_cell_calcs = cs(
                 base_mechanism=mech,
                 cj_speed=cj_speed,
                 initial_temp=init_temp,
@@ -191,7 +197,7 @@ def perform_study(
                 diluent_mol_frac=diluent_mol_frac,
                 inert=inert,
             )
-            base_ind_len = CellSize.induction_length
+            base_ind_len = cs.induction_length
             current_table.store_test_row(
                 mechanism=mech,
                 initial_temp=init_temp,
@@ -238,7 +244,7 @@ def perform_study(
         del stored_base_calcs
 
     # calculate perturbed cell size
-    pert_cell_calcs = CellSize(
+    pert_cell_calcs = cs(
         base_mechanism=mech,
         cj_speed=cj_speed,
         initial_temp=init_temp,
@@ -251,7 +257,7 @@ def perform_study(
         inert=inert,
         perturbed_reaction=perturbed_reaction_no
     )
-    pert_ind_len = CellSize.induction_length
+    pert_ind_len = cs.induction_length
 
     # calculate sensitivities
     sens_ind_len_west = (pert_ind_len['Westbrook'] -
@@ -277,8 +283,8 @@ def perform_study(
         current_table.store_perturbed_row(
             rxn_table_id=rxn_table_id,
             rxn_no=perturbed_reaction_no,
-            rxn=CellSize.base_gas.reaction_equation(perturbed_reaction_no),
-            k_i=CellSize.base_gas.forward_rate_constants[perturbed_reaction_no],
+            rxn=cs.base_gas.reaction_equation(perturbed_reaction_no),
+            k_i=cs.base_gas.forward_rate_constants[perturbed_reaction_no],
             ind_len_west=pert_ind_len['Westbrook'],
             ind_len_gav=pert_ind_len['Gavrikov'],
             ind_len_ng=pert_ind_len['Ng'],
@@ -296,5 +302,6 @@ def perform_study(
 
 
 def init(l):
+    # noinspection PyGlobalUndefined
     global db_lock
     db_lock = l
