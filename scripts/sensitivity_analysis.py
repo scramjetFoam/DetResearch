@@ -3,10 +3,11 @@ import multiprocessing as mp
 import cantera as ct
 from tqdm import tqdm
 
-import funcs.simulation.sensitivity.database as db
+import funcs.simulation.sensitivity.detonation.database as db
 # noinspection PyUnresolvedReferences
 from funcs.simulation.sensitivity import istarmap
-from funcs.simulation.sensitivity.analysis import perform_study, init
+from funcs.simulation.sensitivity.detonation.analysis import perform_study, init
+from funcs.simulation.thermo import match_adiabatic_temp
 
 if __name__ == '__main__':
     import warnings
@@ -20,12 +21,29 @@ if __name__ == '__main__':
     _initial_temp = 300
     _initial_press = 101325
     _equivalence = 1
+
     _fuel = 'CH4'
     _oxidizer = 'N2O'
     # diluent = 'AR'
-    _diluent = 'CO2'
-    _diluent_mol_frac = 0.2
+    _diluent_to_match = 'CO2'
+    _diluent = "N2"
+    # _diluent = None
+    _diluent_mol_frac_to_match = 0.05
+    _diluent_mol_frac = match_adiabatic_temp(
+        _mechanism,
+        _fuel,
+        _oxidizer,
+        _equivalence,
+        _diluent_to_match,
+        _diluent_mol_frac_to_match,
+        _diluent,
+        _initial_temp,
+        _initial_press
+    )
+
+    # _diluent_mol_frac = 0
     _perturbation_fraction = 1e-2
+    max_step_znd = 1e-4  # default 1e-4
     db_name = "sensitivity_2.sqlite"
 
     t = db.Table(
@@ -54,6 +72,7 @@ if __name__ == '__main__':
             reactions.append(rxn)
 
     # PARALLEL -- remove _lock to args in cell_size.CellSize
+    # mp.set_start_method("spawn")
     _lock = mp.Lock()
     n_rxns = len(reactions)
     with mp.Pool(initializer=init, initargs=(_lock,)) as p:
@@ -74,6 +93,7 @@ if __name__ == '__main__':
                         _perturbation_fraction,
                         i,
                         db_name,
+                        max_step_znd
                     ] for i in range(n_rxns)
                 ]
             ),

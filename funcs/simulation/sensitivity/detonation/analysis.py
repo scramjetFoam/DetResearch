@@ -1,8 +1,8 @@
 import sdtoolbox as sd
 
-import simulation.thermo
-from simulation import cell_size
-from simulation.sensitivity import database as db
+from ... import cell_size
+from ..gas import build as build_gas
+from . import database as db
 
 
 def check_stored_base_cj_speed(
@@ -77,25 +77,21 @@ def perform_study(
         perturbation_fraction,
         perturbed_reaction_no,
         db_name,
+        max_step_znd,
         # db_lock
 ):
     cs = cell_size.CellSize()
-    if inert is not None:
-        gas = simulation.thermo.solution_with_inerts(mech, inert)
-    else:
-        gas = simulation.thermo.ct.Solution(mech)
-    gas.TP = init_temp, init_press
-    gas.set_equivalence_ratio(
+    gas = build_gas(
+        mech,
+        init_temp,
+        init_press,
         equivalence,
         fuel,
-        oxidizer
-    )
-    spec = simulation.thermo.diluted_species_dict(
-        gas.mole_fraction_dict(),
+        oxidizer,
         diluent,
-        diluent_mol_frac
+        diluent_mol_frac,
+        inert,
     )
-    gas.X = spec
     table_name = 'data'
     current_table = db.Table(
         database=db_name,
@@ -196,6 +192,7 @@ def perform_study(
                 diluent=diluent,
                 diluent_mol_frac=diluent_mol_frac,
                 inert=inert,
+                max_step_znd=max_step_znd,
             )
             base_ind_len = cs.induction_length
             current_table.store_test_row(
@@ -255,7 +252,8 @@ def perform_study(
         diluent=diluent,
         diluent_mol_frac=diluent_mol_frac,
         inert=inert,
-        perturbed_reaction=perturbed_reaction_no
+        perturbed_reaction=perturbed_reaction_no,
+        max_step_znd=max_step_znd,
     )
     pert_ind_len = cs.induction_length
 

@@ -22,7 +22,7 @@ from .thermo import diluted_species_dict, ORIGINAL_SOLUTION, \
 def wrapped_cvsolve(
         gas,
         sd,
-        max_tries=5,
+        max_tries=10,
         t_end=1e-6,
         max_step=1e-5,
 ):
@@ -182,9 +182,9 @@ class CellSize:
             inert=None,
             perturbed_reaction=-1,
             perturbation_fraction=1e-2,
-            max_tries_znd=5,
+            max_tries_znd=10,
             max_step_znd=1e-4,
-            max_tries_cv=10,
+            max_tries_cv=15,
             cv_end_time=1e-6,
             max_step_cv=5e-7
     ):

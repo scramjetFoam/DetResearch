@@ -2,7 +2,7 @@ import pandas as pd
 import seaborn as sns
 from matplotlib import pyplot as plt
 
-from simulation.sensitivity import database as db
+from ..simulation.sensitivity.detonation import database as db
 
 
 def change_axis_legend_cols(axis, ncol):
@@ -48,7 +48,9 @@ def sensitivity_plot(
         sensitivity_type='cell_size',
         calc_method='Gavrikov',
         min_threshold=0,
-        display_top=0
+        display_top=0,
+        color="C0",
+        xlim=None,
 ):
     methods_str = {
         'Gavrikov': '_gav',
@@ -123,7 +125,7 @@ def sensitivity_plot(
         y='rxn',
         data=sorted_df,
         label='Westbrook',
-        color='b'
+        color=color,
     )
     lbl_font = {
         'weight': 'bold',
@@ -141,6 +143,8 @@ def sensitivity_plot(
         methods_title[calc_method],
         fontdict=title_font
     )
+    if xlim:
+        plt.xlim(xlim)
 
     sns.despine(left=True, bottom=True)
     plt.tight_layout()

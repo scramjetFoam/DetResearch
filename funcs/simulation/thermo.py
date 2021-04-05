@@ -385,3 +385,28 @@ def get_equivalence_ratio(
         Mixture equivalence ratio
     """
     return p_fuel / p_oxidizer / f_a_st
+
+
+def calculate_laminar_flame_speed(
+        gas
+):
+    """
+    Calculates the laminar flame speed of a gas mixture.
+    Based on:
+    https://www.cantera.org/examples/jupyter/flames/flame_speed_with_sensitivity_analysis.ipynb.html
+
+    Parameters
+    ----------
+    gas : ct.Solution
+        Cantera solution object with input conditions
+
+    Returns
+    -------
+    float
+        Laminar flame speed (m/s)
+    """
+    flame = ct.FreeFlame(gas)
+    flame.set_refine_criteria(ratio=3, slope=0.1, curve=0.1)
+    flame.solve(loglevel=0)
+
+    return flame.u[0]
