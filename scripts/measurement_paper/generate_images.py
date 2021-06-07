@@ -41,8 +41,11 @@ SF_SPATIAL_SHOT_MASK = (DF_SF_SPATIAL["date"] == SF_DATE) & \
                        (DF_SF_SPATIAL["shot"] == SF_SHOT)
 SF_DELTA_MM = DF_SF_SPATIAL[SF_SPATIAL_SHOT_MASK]["delta_mm"]
 SF_DELTA_PX = DF_SF_SPATIAL[SF_SPATIAL_SHOT_MASK]["delta_px"]
-COLOR_SC = "C0"
-COLOR_SF = "C1"
+# ibm color blind safe palette
+# https://lospec.com/palette-list/ibm-color-blind-safe
+# https://davidmathlogic.com/colorblind/#%23648FFF-%23785EF0-%23DC267F-%23FE6100-%23FFB000
+COLOR_SC = "#fe6100"
+COLOR_SF = "#648fff"
 
 
 def set_plot_format():
