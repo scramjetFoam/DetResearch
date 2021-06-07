@@ -9,7 +9,7 @@ import cantera as ct
 import pytest
 from numpy import isclose, allclose
 
-import funcs.simulation.sensitivity.database as db
+import funcs.simulation.sensitivity.detonation.database as db
 
 
 def remove_stragglers():  # pragma: no cover
