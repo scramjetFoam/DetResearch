@@ -1,12 +1,3 @@
-# noinspection PyUnresolvedReferences
-from . import \
-    cell_size, \
-    database, \
-    diodes, \
-    post_processing, \
-    schlieren, \
-    sensitivity, \
-    soot_foil, \
-    specific_heat_matching, \
-    uncertainty, \
-    spectral
+from . import dir, plots, post_processing, simulation
+
+__all__ = ["dir", "plots", "post_processing", "simulation"]

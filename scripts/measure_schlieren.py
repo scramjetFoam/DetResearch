@@ -2,7 +2,7 @@
 #       Measure, calibrate, and store all schlieren shots on a given day       #
 ################################################################################
 
-from funcs import schlieren
+from funcs.post_processing.images import schlieren
 import pandas as pd
 import numpy as np
 import uncertainties as un
@@ -49,7 +49,7 @@ def collect_single_replicate(data_store, dates):
                     ([un.ufloat(np.NaN, np.NaN)], np.diff(locs)))
                 df_current = pd.DataFrame(columns=frame_columns)
                 df_current["loc_px"] = [ll.nominal_value for ll in locs]
-                df_current["u_loc_px"] = [ll.std_dev for ll in locs]
+                df_current["u_loc_px"] = [ll.std_dev for ll in locs]  # todo: wtf
                 df_current["delta_px"] = [d.nominal_value for d in deltas]
                 df_current["u_delta_px"] = [d.std_dev for d in deltas]
                 df_current["date"] = this_date
@@ -144,6 +144,7 @@ def process_all_schlieren(
             spatial = dict()
             for which in ["near", "far"]:
                 loc_spatial = schlieren.get_spatial_loc(date, which)
+                # todo: fix the uncertainties, they are quite broken
                 # this is !d because .where will change all locations where
                 # _mask  is False to have the assigned value, which in this
                 # case is our spatial factor
@@ -187,12 +188,14 @@ def process_all_schlieren(
 if __name__ == "__main__":
     import sys
     if len(sys.argv) < 3:
-        suffix = "ggggg"
+        suffix = "hhhhh"
         processed_tube_data_h5 = f"/d/Data/Processed/Data/data_{suffix}.h5"
         schlieren_data_h5 = f"/d/Data/Processed/Data/schlieren_{suffix}.h5"
         dates_to_process = [
-            "2020-09-17",  # Su 2020 Week 14
-            "2020-09-18",  # Su 2020 Week 14
+            # "2020-09-17",  # Su 2020 Week 14 (ggggg)
+            # "2020-09-18",  # Su 2020 Week 14 (ggggg)
+            "2020-12-22",  # Fa 2020 Break 1 (hhhhh)
+            "2020-12-23",  # Fa 2020 Break 1 (hhhhh)
         ]
     else:
         processed_tube_data_h5 = sys.argv[1]
