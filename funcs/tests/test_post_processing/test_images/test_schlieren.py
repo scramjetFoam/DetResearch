@@ -15,7 +15,7 @@ BG_DIR = os.path.join(
 
 def test__find_images_in_dir():
     # noinspection PyTypeChecker
-    assert len(sc._find_images_in_dir(BG_DIR)) == 2
+    assert len(sc.find_images_in_dir(BG_DIR)) == 2
 
 
 def test_collect_shot_images():
@@ -31,7 +31,7 @@ def test_collect_shot_images():
 
 def test_average_frames():
     assert np.allclose(
-        sc.average_frames(sc._find_images_in_dir(BG_DIR)),
+        sc.average_frames(sc.find_images_in_dir(BG_DIR)),
         np.ones((4, 4)) * 127.5
     )
 

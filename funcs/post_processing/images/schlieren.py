@@ -111,7 +111,7 @@ def get_spatial_loc(
         raise ValueError("bad value of `which`")
 
 
-def _find_images_in_dir(
+def find_images_in_dir(
         directory,
         data_type=".tif"
 ):
@@ -164,9 +164,9 @@ def find_shot_images(
     for root, _, files in os.walk(dir_shot):
         curdir = os.path.split(root)[1]
         if curdir == "bg":
-            backgrounds = _find_images_in_dir(root, data_type=data_type)
+            backgrounds = find_images_in_dir(root, data_type=data_type)
         elif curdir == "frames":
-            frames = _find_images_in_dir(root, data_type=data_type)
+            frames = find_images_in_dir(root, data_type=data_type)
 
     return [backgrounds, frames]
 

@@ -1,6 +1,7 @@
 import seaborn as sns
 from matplotlib import pyplot as plt
 from matplotlib.patches import Circle
+from skimage.transform import rotate
 
 
 def all_results(run_output):
@@ -116,8 +117,18 @@ def image_filtering(
     filtered_image,
     edge_detected,
     final_psd,
-    figsize=(16, 10)
+    figsize=(16, 10),
+    rotate_image=False,
 ):
+    if rotate_image:
+        angle = -90
+        base_image = rotate(base_image, angle)
+        base_psd = rotate(base_psd, angle)
+        masked_psd = rotate(masked_psd, angle)
+        filtered_image = rotate(filtered_image, angle)
+        edge_detected = rotate(edge_detected, angle)
+        final_psd = rotate(final_psd, angle)
+
     fig_images, ax_images = plt.subplots(2, 3, figsize=figsize)
     fig_images.canvas.set_window_title("Images")
     ax_images = ax_images
