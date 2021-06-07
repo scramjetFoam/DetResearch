@@ -10,7 +10,7 @@ CREATED BY:
     cartemic@oregonstate.edu
 """
 
-from funcs import diodes
+from post_processing.tube import diodes
 from matplotlib import pyplot as plt
 import palettable
 import numpy as np
