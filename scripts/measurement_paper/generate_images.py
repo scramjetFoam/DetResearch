@@ -13,6 +13,7 @@ from skimage import io, transform
 from uncertainties import unumpy as unp
 
 import funcs
+
 from funcs.post_processing.images.soot_foil import deltas as pp_deltas
 
 d_drive = funcs.dir.d_drive
@@ -197,7 +198,7 @@ def build_schlieren_images(
         plt.axhline(
             loc_px,
             c=COLOR_SC,
-            lw=0.5
+            lw=0.5,
         )
     plt.tight_layout()
 
@@ -291,7 +292,7 @@ def plot_schlieren_measurement_convergence(
         running_mean - running_sem,
         alpha=0.25,
         color=COLOR_SC,
-        ec=None
+        ec=None,
     )
     plt.plot(
         n_meas,
@@ -754,7 +755,6 @@ def plot_cell_size_comparison(
     )
 
     ax.set_ylim(ax_ylim)
-    # ax.axvline(df_schlieren_tube["cell_size"].median())
     ax.set_xlabel("Measured Cell Size (mm)")
     ax.set_ylabel("Probability Density\n(1/mm)")
     ax.set_title("Schlieren Cell Size Measurement Distribution")
