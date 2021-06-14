@@ -991,6 +991,7 @@ def plot_cell_size_comparison(
         plot_width,
         plot_height,
         save=False,
+        zero_centered=False,
 ):
     """
     Plot comparison between schlieren and soot foil cell size measurement
@@ -1016,12 +1017,20 @@ def plot_cell_size_comparison(
         Height of plot (in)
     save : bool
         Whether or not to save images
+    zero_centered : bool
+        Whether or not to center about zero
 
     Returns
     -------
 
     """
+    plot_title = "Schlieren Cell Size Measurement Distributions"
     name = "cell_size_comparison"
+    if zero_centered:
+        name += "_zero_centered"
+        plot_title += " (Zero Centered)"
+        measurements_foil -= cell_size_meas_foil
+        measurements_schlieren -= cell_size_meas_schlieren
     fig, ax = plt.subplots(figsize=(plot_width, plot_height))
     fig.canvas.set_window_title(name)
     sns.distplot(  # schlieren
@@ -1041,45 +1050,46 @@ def plot_cell_size_comparison(
         kde_kws={"ls": "-"},
     )
     plt.legend(frameon=False)
-    ax_ylim = ax.get_ylim()
-    plt.fill_between(  # schlieren
-        [cell_size_meas_schlieren + cell_size_uncert_schlieren,
-         cell_size_meas_schlieren - cell_size_uncert_schlieren],
-        ax_ylim[0],
-        ax_ylim[1],
-        alpha=0.25,
-        color=COLOR_SC,
-        ec=None,
-        zorder=-1,
-    )
-    ax.fill_between(  # soot foil
-        [cell_size_meas_foil + cell_size_uncert_foil,
-         cell_size_meas_foil - cell_size_uncert_foil],
-        ax_ylim[0],
-        ax_ylim[1],
-        alpha=0.25,
-        color=COLOR_SF,
-        ec=None,
-        zorder=-1,
-    )
-    ax.axvline(  # schlieren
-        cell_size_meas_schlieren,
-        c=COLOR_SC,
-        ls="--",
-        alpha=0.7,
-        zorder=-1,
-    )
-    ax.axvline(  # soot foil
-        cell_size_meas_foil,
-        color=COLOR_SF,
-        ls="--",
-        alpha=0.7,
-        zorder=-1,
-    )
-    ax.set_ylim(ax_ylim)
+    if not zero_centered:
+        ax_ylim = ax.get_ylim()
+        plt.fill_between(  # schlieren
+            [cell_size_meas_schlieren + cell_size_uncert_schlieren,
+             cell_size_meas_schlieren - cell_size_uncert_schlieren],
+            ax_ylim[0],
+            ax_ylim[1],
+            alpha=0.25,
+            color=COLOR_SC,
+            ec=None,
+            zorder=-1,
+        )
+        ax.fill_between(  # soot foil
+            [cell_size_meas_foil + cell_size_uncert_foil,
+             cell_size_meas_foil - cell_size_uncert_foil],
+            ax_ylim[0],
+            ax_ylim[1],
+            alpha=0.25,
+            color=COLOR_SF,
+            ec=None,
+            zorder=-1,
+        )
+        ax.axvline(  # schlieren
+            cell_size_meas_schlieren,
+            c=COLOR_SC,
+            ls="--",
+            alpha=0.7,
+            zorder=-1,
+        )
+        ax.axvline(  # soot foil
+            cell_size_meas_foil,
+            color=COLOR_SF,
+            ls="--",
+            alpha=0.7,
+            zorder=-1,
+        )
+        ax.set_ylim(ax_ylim)
     ax.set_xlabel("Measured Cell Size (mm)")
     ax.set_ylabel("Probability Density\n(1/mm)")
-    ax.set_title("Schlieren Cell Size Measurement Distributions")
+    ax.set_title(plot_title)
     ax.grid(False)
     sns.despine()
     plt.tight_layout()
@@ -1181,6 +1191,19 @@ def main(
         plot_width,
         plot_height,
         save,
+        zero_centered=False
+    )
+    plot_cell_size_comparison(
+        unp.nominal_values(schlieren_meas),
+        cell_size_meas_schlieren,
+        cell_size_uncert_schlieren,
+        unp.nominal_values(measurements_foil),
+        cell_size_meas_foil,
+        cell_size_uncert_foil,
+        plot_width,
+        plot_height,
+        save,
+        zero_centered=True
     )
     foil_to_schlieren = un.ufloat(
         cell_size_meas_foil,
@@ -1206,14 +1229,14 @@ def main(
               f"    p: {t_p_value:0.3e}\n" \
               f"    a: {alpha}\n\n"
 
-    # compare distributions
+    # center distributions about zero and compare them
     ks_stat, ks_p_value = ks_2samp(
-        unp.nominal_values(measurements_foil),
-        unp.nominal_values(schlieren_meas),
+        unp.nominal_values(measurements_foil) - cell_size_meas_foil,
+        unp.nominal_values(schlieren_meas) - cell_size_meas_schlieren,
     )
     ks_test_null = check_null_hypothesis(ks_p_value, alpha)
     dists = f"{ks_test_null} the null hypothesis that distributions are equal"
-    report += get_title_block("Distributions")
+    report += get_title_block("Distributions (zero centered)")
     report += f"{dists}\n" \
               f"    test statistic: {ks_stat:0.2f}\n" \
               f"    p: {ks_p_value:0.3e}\n" \
