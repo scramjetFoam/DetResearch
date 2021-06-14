@@ -129,7 +129,7 @@ def find_images_in_dir(
 
     Returns
     -------
-    list
+    List[str]
     """
     last_n = -len(data_type)
     return sorted([
