@@ -1,0 +1,19 @@
+Measurements
+============
+schlieren: 19.41+/-1.71 mm
+soot foil: 22.79+/-1.48 mm
+soot foil/schlieren ratio: 1.17+/-0.13
+
+Means
+=====
+Reject the null hypothesis that means are equal
+    test statistic: 3.13
+    p: 4.355e-03
+    a: 0.05
+
+Distributions
+=============
+Fail to reject the null hypothesis that distributions are equal
+    test statistic: 0.43
+    p: 1.549e-01
+    a: 0.05
