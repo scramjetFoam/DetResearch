@@ -796,6 +796,7 @@ def plot_single_foil_delta_distribution(
         plt.savefig(f"{name}.{PLOT_FILETYPE}")
 
 
+# noinspection PyUnresolvedReferences
 def calculate_soot_foil_cell_size(
         # n_schlieren_meas,
 ):
@@ -896,14 +897,13 @@ def calculate_soot_foil_cell_size(
     # collect population uncertainty
     n_measurements = len(measurements)
     cell_size_meas = np.sum(measurements) / n_measurements
-    cell_size_uncert_population = (  # todo: account for calibration uncertainty
+    cell_size_uncert_population = (
             meas_nominal.std() /
             np.sqrt(n_measurements) *
             t.ppf(0.975, n_measurements - 1)
     )
 
     # combine uncertainties
-    # noinspection PyUnresolvedReferences
     cell_size_uncert = np.sqrt(np.sum(np.square([
         cell_size_uncert_population,
         cell_size_meas.std_dev
@@ -1062,7 +1062,6 @@ def plot_cell_size_comparison(
         ec=None,
         zorder=-1,
     )
-
     ax.axvline(  # schlieren
         cell_size_meas_schlieren,
         c=COLOR_SC,
@@ -1077,11 +1076,10 @@ def plot_cell_size_comparison(
         alpha=0.7,
         zorder=-1,
     )
-
     ax.set_ylim(ax_ylim)
     ax.set_xlabel("Measured Cell Size (mm)")
     ax.set_ylabel("Probability Density\n(1/mm)")
-    ax.set_title("Schlieren Cell Size Measurement Distribution")
+    ax.set_title("Schlieren Cell Size Measurement Distributions")
     ax.grid(False)
     sns.despine()
     plt.tight_layout()
