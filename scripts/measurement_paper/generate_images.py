@@ -288,13 +288,18 @@ def build_schlieren_images(
         plt.savefig(f"{name}.{PLOT_FILETYPE}")
 
 
-def calculate_schlieren_cell_size(df_tube_data):
+def calculate_schlieren_cell_size(
+        df_tube_data,
+        iqr_fencing=False,
+):
     """
     
     Parameters
     ----------
     df_tube_data : pd.DataFrame
         DataFrame containing schlieren data
+    iqr_fencing : bool
+        Remove outliers using IQR fencing?
 
     Returns
     -------
@@ -306,13 +311,18 @@ def calculate_schlieren_cell_size(df_tube_data):
         * Number of measurements
     """
     meas = df_tube_data["cell_size"]
-    meas_mean = meas.mean()
-    meas_std = meas.std()
-    mask = (
-            (meas_mean - 1.5 * meas_std <= meas) &
-            (meas <= meas_mean + 1.5 * meas_std)
-    )
-    del meas_std, meas_mean  # make sure we use reduced dataset!
+    if iqr_fencing:
+        # remove outliers
+        meas_mean = meas.mean()
+        meas_std = meas.std()
+        mask = (
+                (meas_mean - 1.5 * meas_std <= meas) &
+                (meas <= meas_mean + 1.5 * meas_std)
+        )
+        del meas_std, meas_mean  # make sure we use reduced dataset!
+    else:
+        # leave em
+        mask = np.ones(len(df_tube_data), dtype=bool)
     meas = unp.uarray(
         meas[mask],
         df_tube_data["u_cell_size"][mask].values,
@@ -799,6 +809,7 @@ def plot_single_foil_delta_distribution(
 # noinspection PyUnresolvedReferences
 def calculate_soot_foil_cell_size(
         # n_schlieren_meas,
+        iqr_fencing,
 ):
     """
     Calculates the mean cell size from soot foil images
@@ -811,6 +822,8 @@ def calculate_soot_foil_cell_size(
         in case it needs to be used again later, however the randomly selected
         batch of measurements from the first time this was run has been
         preserved and will be used for the sake of continuity.
+    iqr_fencing : bool
+        Remove outliers using IQR fencing?
 
     Returns
     -------
@@ -873,24 +886,26 @@ def calculate_soot_foil_cell_size(
         d_mm = d_px * cal_mm / cal_px
         measurements[idx] = np.sum(d_mm) / len(d_mm)
 
-    # remove outliers
     meas_nominal = unp.nominal_values(measurements)
-    mean = meas_nominal.mean()
-    std = meas_nominal.std()
-    meas_mask = (meas_nominal <= mean + std * 1.5) &\
-                (meas_nominal >= mean - std * 1.5)
-    measurements = measurements[meas_mask]
-    meas_nominal = meas_nominal[meas_mask]
-    del mean, std  # don't accidentally reuse these!
+
+    if iqr_fencing:
+        # remove outliers
+        mean = meas_nominal.mean()
+        std = meas_nominal.std()
+        meas_mask = (meas_nominal <= mean + std * 1.5) &\
+                    (meas_nominal >= mean - std * 1.5)
+        measurements = measurements[meas_mask]
+        meas_nominal = meas_nominal[meas_mask]
+        del mean, std  # don't accidentally reuse these!
 
     # scale to match number of samples with schlieren
-    # reduced_indices = np.random.choice(
+    # reduced_indices = sorted(np.random.choice(
     #     np.arange(len(measurements)),
     #     n_schlieren_meas,
     #     replace=False,
-    # )
-    # copy/paste result for consistency between runs of the notebook
-    reduced_indices = [0, 1, 2, 6, 7, 9, 10, 11, 12, 13, 14, 15, 16, 17]
+    # ))
+    reduced_indices = [0, 1, 3, 5, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]
+
     measurements = measurements[reduced_indices]
     meas_nominal = meas_nominal[reduced_indices]
 
@@ -1113,6 +1128,7 @@ def get_title_block(title):
 
 
 def main(
+        remove_outliers,
         save,
 ):
     cmap = "Greys_r"
@@ -1133,7 +1149,10 @@ def main(
     (cell_size_meas_schlieren,
      cell_size_uncert_schlieren,
      schlieren_meas,
-     n_schlieren_meas) = calculate_schlieren_cell_size(df_schlieren_tube)
+     n_schlieren_meas) = calculate_schlieren_cell_size(
+        df_schlieren_tube,
+        remove_outliers,
+    )
     plot_schlieren_measurement_distribution(
         unp.nominal_values(schlieren_meas),
         cell_size_meas_schlieren,
@@ -1167,7 +1186,7 @@ def main(
     )
     (measurements_foil,
      cell_size_meas_foil,
-     cell_size_uncert_foil) = calculate_soot_foil_cell_size()
+     cell_size_uncert_foil) = calculate_soot_foil_cell_size(remove_outliers)
     plot_soot_foil_measurement_distribution(
         unp.nominal_values(measurements_foil),
         cell_size_meas_foil,
@@ -1249,6 +1268,7 @@ def main(
 
 
 if __name__ == "__main__":
+    remove_outliers_from_data = False
     save_results = True
-    main(save_results)
+    main(remove_outliers_from_data, save_results)
     plt.show()
