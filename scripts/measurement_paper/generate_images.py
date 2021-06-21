@@ -158,6 +158,16 @@ def get_schlieren_data():
         ) as store:
             df_schlieren_frames = pd.concat((df_schlieren_frames, store.data))
 
+    # fix jacked up measurement
+    with pd.HDFStore(
+            "/d/Data/Processed/Data/tube_data_2020-08-07.h5",
+            "r",
+    ) as store:
+        df_schlieren_tube[
+            (df_schlieren_tube["date"] == "2020-08-07") &
+            (df_schlieren_tube["shot"] == 3)
+        ] = store.data.iloc[0].values
+
     # calculate cell size measurements
     df_schlieren_tube = df_schlieren_tube[
         np.isclose(df_schlieren_tube["phi_nom"], 1) &
@@ -291,6 +301,7 @@ def build_schlieren_images(
 def calculate_schlieren_cell_size(
         df_tube_data,
         iqr_fencing=False,
+        estimator=np.mean,
 ):
     """
     
@@ -329,7 +340,8 @@ def calculate_schlieren_cell_size(
     )
     n_meas = len(meas)
     nominal_values = unp.nominal_values(meas)
-    cell_size_meas = np.sum(meas) / n_meas
+    # cell_size_meas = np.sum(meas) / n_meas
+    cell_size_meas = estimator(meas)
     cell_size_uncert_population = (
             nominal_values.std() /
             np.sqrt(n_meas) *
@@ -810,6 +822,7 @@ def plot_single_foil_delta_distribution(
 def calculate_soot_foil_cell_size(
         # n_schlieren_meas,
         iqr_fencing,
+        estimator=np.mean,
 ):
     """
     Calculates the mean cell size from soot foil images
@@ -827,7 +840,7 @@ def calculate_soot_foil_cell_size(
 
     Returns
     -------
-    Tuple[np.array, float, float]
+    Tuple[np.array, float, float, pd.DataFrame]
 
         * Per-foil measurements (mm)
         * Mean cell size (mm)
@@ -858,6 +871,7 @@ def calculate_soot_foil_cell_size(
     measurements = (np.zeros(len(date_shot)) * np.NaN).astype(object)
     u_d_px = soot_foil_px_loc_uncertainty()
 
+    all_meas = []
     for idx, (date, shot) in enumerate(date_shot):
         cal_mm, cal_px, u_cal_mm, u_cal_px = DF_SF_SPATIAL[
             (DF_SF_SPATIAL["date"] == date) &
@@ -884,7 +898,9 @@ def calculate_soot_foil_cell_size(
 
         # calculate!
         d_mm = d_px * cal_mm / cal_px
-        measurements[idx] = np.sum(d_mm) / len(d_mm)
+        all_meas.extend(list(unp.nominal_values(d_mm)))
+        # measurements[idx] = np.sum(d_mm) / len(d_mm)
+        measurements[idx] = estimator(d_mm)
 
     meas_nominal = unp.nominal_values(measurements)
 
@@ -908,6 +924,17 @@ def calculate_soot_foil_cell_size(
 
     measurements = measurements[reduced_indices]
     meas_nominal = meas_nominal[reduced_indices]
+    date_shot_index = pd.MultiIndex.from_tuples(date_shot)[reduced_indices]
+
+    # read in data
+    with pd.HDFStore(
+            "/d/Data/Processed/Data/data_soot_foil.h5",
+            "r"
+    ) as store:
+        df_tube = store.data.set_index(["date", "shot"], drop=True)
+
+    # trim down to only dates/shots currently in use
+    df_tube = df_tube.loc[date_shot_index]
 
     # collect population uncertainty
     n_measurements = len(measurements)
@@ -924,7 +951,7 @@ def calculate_soot_foil_cell_size(
         cell_size_meas.std_dev
     ])))
 
-    return measurements, cell_size_meas.nominal_value, cell_size_uncert
+    return measurements, cell_size_meas.nominal_value, cell_size_uncert, df_tube
 
 
 def plot_soot_foil_measurement_distribution(
@@ -1112,6 +1139,36 @@ def plot_cell_size_comparison(
         plt.savefig(f"{name}.{PLOT_FILETYPE}")
 
 
+def get_initial_conditions(df_data):
+    """
+    Extract initial conditions from filtered tube dataframe
+
+    Parameters
+    ----------
+    df_data : pd.DataFrame
+        Dataframe of tube data filtered down to desired measurements
+
+    Returns
+    -------
+    dict
+        dictionary of measurements with uncertainties stored in the following
+        keys:
+
+        * "p_0"
+        * "t_0"
+        * "phi"
+        * "dil_mf"
+    """
+    out = {}
+    for item in ("p_0", "t_0", "phi", "dil_mf"):
+        out[item] = unp.uarray(
+            df_data[item],
+            df_data[f"u_{item}"]
+        ).mean()
+
+    return out
+
+
 def check_null_hypothesis(p_value, alpha):
     if np.abs(p_value - alpha) / alpha <= 0.1:  # indeterminate within 10%
         null_means = "Neither accept nor reject"
@@ -1130,6 +1187,7 @@ def get_title_block(title):
 def main(
         remove_outliers,
         save,
+        estimator,
 ):
     cmap = "Greys_r"
     plot_width = 6
@@ -1152,7 +1210,9 @@ def main(
      n_schlieren_meas) = calculate_schlieren_cell_size(
         df_schlieren_tube,
         remove_outliers,
+        estimator,
     )
+    initial_conditions_schlieren = get_initial_conditions(df_schlieren_tube)
     plot_schlieren_measurement_distribution(
         unp.nominal_values(schlieren_meas),
         cell_size_meas_schlieren,
@@ -1186,7 +1246,12 @@ def main(
     )
     (measurements_foil,
      cell_size_meas_foil,
-     cell_size_uncert_foil) = calculate_soot_foil_cell_size(remove_outliers)
+     cell_size_uncert_foil,
+     df_tube_soot_foil) = calculate_soot_foil_cell_size(
+        remove_outliers,
+        estimator,
+    )
+    initial_conditions_soot_foil = get_initial_conditions(df_tube_soot_foil)
     plot_soot_foil_measurement_distribution(
         unp.nominal_values(measurements_foil),
         cell_size_meas_foil,
@@ -1259,7 +1324,22 @@ def main(
     report += f"{dists}\n" \
               f"    test statistic: {ks_stat:0.2f}\n" \
               f"    p: {ks_p_value:0.3e}\n" \
-              f"    a: {alpha}"
+              f"    a: {alpha}\n\n"
+    report += get_title_block("Initial Conditions")
+    report += (
+        "schlieren:\n"
+        f"    P: {initial_conditions_schlieren['p_0']:.2f} Pa\n"
+        f"    T: {initial_conditions_schlieren['t_0']:.2f} K\n"
+        f"    phi: {initial_conditions_schlieren['phi']:.3f}\n"
+        f"    dil mf: {initial_conditions_schlieren['dil_mf']:.3f}\n"
+    )
+    report += (
+        "soot foil:\n"
+        f"    P: {initial_conditions_soot_foil['p_0']:.2f} Pa\n"
+        f"    T: {initial_conditions_soot_foil['t_0']:.2f} K\n"
+        f"    phi: {initial_conditions_soot_foil['phi']:.3f}\n"
+        f"    dil mf: {initial_conditions_soot_foil['dil_mf']:.3f}\n\n"
+    )
 
     print(report)
     if save:
@@ -1269,6 +1349,7 @@ def main(
 
 if __name__ == "__main__":
     remove_outliers_from_data = False
-    save_results = True
-    main(remove_outliers_from_data, save_results)
+    save_results = False
+    cell_size_estimator = np.median
+    main(remove_outliers_from_data, save_results, cell_size_estimator)
     plt.show()
