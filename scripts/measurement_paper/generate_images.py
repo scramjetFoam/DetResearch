@@ -1301,11 +1301,11 @@ def plot_cell_size_comparison(
     -------
 
     """
-    plot_title = "Schlieren Cell Size Measurement Distributions"
+    plot_title = "Cell Size Measurement Distributions"
     name = "cell_size_comparison"
     if zero_centered:
         name += "_zero_centered"
-        plot_title += " (Zero Centered)"
+        plot_title += "\n(Zero Centered)"
         measurements_foil -= cell_size_meas_foil
         measurements_schlieren -= cell_size_meas_schlieren
     fig, ax = plt.subplots(figsize=(plot_width, plot_height))
@@ -1610,8 +1610,21 @@ def main(
         f"    dil mf: {initial_conditions_soot_foil['dil_mf'] * 100:.2f} %\n"
         f"    speed: {initial_conditions_soot_foil['wave_speed']:.3f} m/s\n"
         f"           {initial_conditions_soot_foil['wave_speed'] / cj:.3f} "
-        f"m/s\n\n"
+        f"m/s\n"
     )
+
+    t_stat, t_p_value = ttest_ind(
+        df_schlieren_tube["wave_speed"],
+        df_tube_soot_foil["wave_speed"],
+        equal_var=False,
+    )
+    t_test_speed = check_null_hypothesis(t_p_value, alpha)
+    report += get_title_block("Speeds")
+    means = f"{t_test_speed} the null hypothesis that means are equal"
+    report += f"{means}\n" \
+              f"    test statistic: {t_stat:0.2f}\n" \
+              f"    p: {t_p_value:0.3e}\n" \
+              f"    a: {alpha}\n\n"
 
     print(report)
     if save:
