@@ -513,6 +513,8 @@ def plot_all_schlieren_deltas_distribution(
             dpi=DPI,
         )
 
+    return deltas
+
 
 def plot_all_soot_foil_deltas_distribution(
         soot_foil_meas,
@@ -560,6 +562,7 @@ def plot_all_soot_foil_deltas_distribution(
             ),
             dpi=DPI,
         )
+
 
 def plot_both_delta_distributions(
         df_schlieren_frames,
@@ -1449,7 +1452,7 @@ def main(
         image_height=image_height_schlieren,
         save=save,
     )
-    plot_all_schlieren_deltas_distribution(
+    schlieren_deltas = plot_all_schlieren_deltas_distribution(
         df_schlieren_frames,
         plot_width,
         plot_height,
@@ -1634,7 +1637,7 @@ def main(
 
 if __name__ == "__main__":
     remove_outliers_from_data = False
-    save_results = True
+    save_results = False
     cell_size_estimator = np.median
     main(remove_outliers_from_data, save_results, cell_size_estimator)
     # plt.show()
