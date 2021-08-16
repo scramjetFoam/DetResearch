@@ -1,5 +1,8 @@
 import os
+import sys
 from copy import copy
+from functools import wraps
+from time import time
 
 import funcs
 import numpy as np
@@ -10,7 +13,7 @@ from funcs.post_processing.images.soot_foil import deltas as pp_deltas
 from matplotlib import patches
 from matplotlib import pyplot as plt
 from matplotlib_scalebar.scalebar import ScaleBar
-from scipy.stats import ks_2samp, t, ttest_ind
+from scipy.stats import ks_2samp, t, ttest_ind, ttest_ind_from_stats
 from skimage import io, transform
 from uncertainties import unumpy as unp
 
@@ -50,6 +53,25 @@ SAVE_LOC = os.path.join(d_drive, "Measurement-Paper", "images")
 DPI = 200
 
 
+def timed(func):
+    @wraps(func)
+    def _timed(*args, **kwargs):
+        name = func.__name__
+        if name != "main":
+            sys.stderr.write(f"{func.__name__} ")
+        t0 = time()
+        out = func(*args, **kwargs)
+        t1 = time()
+        if name != "main":
+            sys.stderr.write(f"took {t1 - t0:6f} sec\n")
+        else:
+            sys.stderr.write(f"Done! {t1 - t0:6f} sec\n")
+        return out
+
+    return _timed
+
+
+@timed
 def set_plot_format():
     common_size = 7.5
     sns.set_color_codes("deep")
@@ -148,6 +170,7 @@ def get_scale_bar(
     )
 
 
+@timed
 def get_schlieren_data(estimator):
     """
     Read in schlieren data from assorted .h5 stores and calculate cell sizes
@@ -159,6 +182,7 @@ def get_schlieren_data(estimator):
     """
     # read in data
     df_schlieren_tube = pd.DataFrame()
+    df_schlieren_all_frames = pd.DataFrame()
     df_schlieren_frames = pd.DataFrame()
     for group in ("fffff", "hhhhh", "ggggg"):
         with pd.HDFStore(
@@ -170,7 +194,9 @@ def get_schlieren_data(estimator):
             f"/d/Data/Processed/Data/schlieren_{group}.h5",
             "r",
         ) as store:
-            df_schlieren_frames = pd.concat((df_schlieren_frames, store.data))
+            df_schlieren_all_frames = pd.concat(
+                (df_schlieren_all_frames, store.data)
+            )
 
     # fix jacked up measurement
     with pd.HDFStore(
@@ -195,13 +221,26 @@ def get_schlieren_data(estimator):
     df_schlieren_tube["cell_size"] = np.NaN
     df_schlieren_tube["u_cell_size"] = np.NaN
 
+    deltas = unp.uarray(
+        df_schlieren_all_frames["delta_px"],
+        df_schlieren_all_frames["u_delta_px"],
+    )
+    spatials = unp.uarray(
+        df_schlieren_all_frames["spatial_centerline"],
+        df_schlieren_all_frames["u_spatial_centerline"],
+    )
+    cell_sizes = deltas * spatials
+    df_schlieren_all_frames["cell_size"] = unp.nominal_values(cell_sizes)
+    df_schlieren_all_frames["u_cell_size"] = unp.std_devs(cell_sizes)
+
     for (date, shot), _ in df_schlieren_tube.groupby(["date", "shot"]):
-        _df_this_shot = df_schlieren_frames[
+        _df_this_shot = df_schlieren_all_frames[
             (
-                (df_schlieren_frames["date"] == date)
-                & (df_schlieren_frames["shot"] == shot)
+                (df_schlieren_all_frames["date"] == date)
+                & (df_schlieren_all_frames["shot"] == shot)
             )
         ].dropna()
+        df_schlieren_frames = pd.concat((df_schlieren_frames, _df_this_shot))
         if len(_df_this_shot):
             _deltas = unp.uarray(
                 _df_this_shot["delta_px"],
@@ -228,6 +267,7 @@ def get_schlieren_data(estimator):
     return df_schlieren_frames, df_schlieren_tube
 
 
+@timed
 def build_schlieren_images(
     cmap,
     df_meas,
@@ -325,8 +365,9 @@ def build_schlieren_images(
         )
 
 
+@timed
 def calculate_schlieren_cell_size(
-    df_tube_data,
+    df_schlieren_frames,
     iqr_fencing=False,
     estimator=np.mean,
 ):
@@ -334,7 +375,7 @@ def calculate_schlieren_cell_size(
 
     Parameters
     ----------
-    df_tube_data : pd.DataFrame
+    df_schlieren_frames : pd.DataFrame
         DataFrame containing schlieren data
     iqr_fencing : bool
         Remove outliers using IQR fencing?
@@ -345,29 +386,29 @@ def calculate_schlieren_cell_size(
 
         * Measured nominal cell size (mm)
         * Measured cell size uncertainty (mm)
-        * Individual measurements with uncertainties (mm)
+        * Individual deltas with uncertainties (mm)
         * Number of measurements
     """
-    meas = df_tube_data["cell_size"]
+    df_schlieren_frames = df_schlieren_frames.copy().dropna()
     if iqr_fencing:
         # remove outliers
-        meas_mean = meas.mean()
-        meas_std = meas.std()
-        mask = (meas_mean - 1.5 * meas_std <= meas) & (
-            meas <= meas_mean + 1.5 * meas_std
-        )
+        meas_mean = df_schlieren_frames["cell_size"].mean()
+        meas_std = df_schlieren_frames["cell_size"].std()
+        mask = (
+            meas_mean - 1.5 * meas_std <= df_schlieren_frames["cell_size"]
+        ) & (df_schlieren_frames["cell_size"] <= meas_mean + 1.5 * meas_std)
         del meas_std, meas_mean  # make sure we use reduced dataset!
     else:
         # leave em
-        mask = np.ones(len(df_tube_data), dtype=bool)
+        mask = np.ones_like(df_schlieren_frames["cell_size"], dtype=bool)
     meas = unp.uarray(
-        meas[mask],
-        df_tube_data["u_cell_size"][mask].values,
+        df_schlieren_frames["cell_size"][mask],
+        df_schlieren_frames["u_cell_size"][mask].values,
     )
     n_meas = len(meas)
     nominal_values = unp.nominal_values(meas)
     # cell_size_meas = np.sum(meas) / n_meas
-    cell_size_meas = np.mean(meas)
+    cell_size_meas = 2 * estimator(meas)
     cell_size_uncert_population = (
         nominal_values.std() / np.sqrt(n_meas) * t.ppf(0.975, n_meas - 1)
     )
@@ -392,6 +433,7 @@ def calculate_schlieren_cell_size(
     )
 
 
+@timed
 def plot_schlieren_measurement_distribution(
     schlieren_meas,
     cell_size_meas,
@@ -428,7 +470,7 @@ def plot_schlieren_measurement_distribution(
     sns.distplot(
         schlieren_meas,
         hist=False,
-        rug=True,
+        # rug=True,
         ax=ax,
         color=COLOR_SC,
     )
@@ -463,6 +505,7 @@ def plot_schlieren_measurement_distribution(
         )
 
 
+@timed
 def plot_all_schlieren_deltas_distribution(
     df_schlieren_frames,
     plot_width,
@@ -514,6 +557,7 @@ def plot_all_schlieren_deltas_distribution(
     return deltas
 
 
+@timed
 def plot_all_soot_foil_deltas_distribution(
     soot_foil_meas,
     plot_width,
@@ -559,6 +603,7 @@ def plot_all_soot_foil_deltas_distribution(
         )
 
 
+@timed
 def plot_both_delta_distributions(
     df_schlieren_frames,
     soot_foil_meas,
@@ -619,8 +664,12 @@ def plot_both_delta_distributions(
         )
 
 
+# noinspection DuplicatedCode
+@timed
 def plot_schlieren_measurement_convergence(
     schlieren_meas,
+    schlieren_uncert,
+    schlieren_meas_all,
     n_schlieren_meas,
     plot_width,
     plot_height,
@@ -631,7 +680,11 @@ def plot_schlieren_measurement_convergence(
 
     Parameters
     ----------
-    schlieren_meas : np.array
+    schlieren_meas : float
+        Actual measured schlieren value
+    schlieren_uncert : float
+        Uncertainty in measured value
+    schlieren_meas_all : np.array
         Array of individual schlieren nominal measurements (mm)
     n_schlieren_meas : int
         Number of schlieren measurements
@@ -650,41 +703,28 @@ def plot_schlieren_measurement_convergence(
     fig, ax = plt.subplots(figsize=(plot_width, plot_height))
     fig.canvas.set_window_title(name)
     n_meas = np.arange(1, n_schlieren_meas + 1)
-    schlieren_meas = pd.Series(schlieren_meas)
-    running_mean = schlieren_meas.rolling(
+    schlieren_meas_all = pd.Series(schlieren_meas_all)
+    running_mean = schlieren_meas_all.rolling(
         n_schlieren_meas,
         min_periods=0,
-    ).mean()
-    running_std = schlieren_meas.rolling(
-        n_schlieren_meas,
-        min_periods=0,
-    ).std()
-    running_sem = running_std / np.sqrt(n_meas)
-    plt.fill_between(
-        n_meas,
-        running_mean + running_sem,
-        running_mean - running_sem,
-        alpha=0.25,
-        color=COLOR_SC,
-        ec=None,
-    )
+    ).median()
     plt.plot(
         n_meas,
-        running_mean,
-        "--",
-        alpha=0.7,
+        np.abs(running_mean - schlieren_meas) * 100 / schlieren_meas,
         c=COLOR_SC,
     )
-    plt.scatter(
-        n_meas,
-        running_mean,
-        c=COLOR_SC,
-        marker=".",
+    plt.axhline(
+        schlieren_uncert / schlieren_meas * 100,
+        c="k",
+        alpha=0.5,
+        zorder=-1,
+        lw=0.5,
+        ls=(0, (5, 1, 1, 1)),
     )
     plt.xlim([2, len(running_mean)])
-    ax.set_xlabel("Number of Frames Measured")
-    ax.set_ylabel("Mean Cell Size\n(mm)")
-    ax.set_title("Schlieren Cell Size Measurement")
+    ax.set_xlabel("Number of Triple Point Deltas")
+    ax.set_ylabel("Absolute Difference\nFrom Final (%)")
+    ax.set_title("Schlieren Cell Size Measurement Convergence")
     ax.grid(False)
     plt.tight_layout()
     sns.despine()
@@ -695,6 +735,76 @@ def plot_schlieren_measurement_convergence(
         )
 
 
+# noinspection DuplicatedCode
+@timed
+def plot_soot_foil_measurement_convergence(
+    nominal_measurement,
+    uncert,
+    all_measurements,
+    plot_width,
+    plot_height,
+    save=False,
+):
+    """
+    Plots convergence of soot foil measurements vs. number of measurements.
+
+    Parameters
+    ----------
+    nominal_measurement : float
+        Actual measured value
+    uncert : float
+        Uncertainty in measured value
+    all_measurements : np.array
+        Array of individual nominal measurements (mm)
+    plot_width : float
+        Width of plot (in)
+    plot_height : float
+        Height of plot (in)
+    save : bool
+        Whether or not to save the plot
+
+    Returns
+    -------
+
+    """
+    name = "soot_foil_measurement_convergence"
+    fig, ax = plt.subplots(figsize=(plot_width, plot_height))
+    fig.canvas.set_window_title(name)
+    n_meas = len(all_measurements)
+    meas_range = np.arange(1, n_meas + 1)
+    all_measurements = pd.Series(all_measurements)
+    running_mean = all_measurements.rolling(
+        n_meas,
+        min_periods=0,
+    ).median()
+    plt.plot(
+        meas_range,
+        np.abs(running_mean - nominal_measurement) * 100 / nominal_measurement,
+        c=COLOR_SF,
+    )
+    plt.axhline(
+        uncert / nominal_measurement * 100,
+        c="k",
+        alpha=0.5,
+        zorder=-1,
+        lw=0.5,
+        ls=(0, (5, 1, 1, 1)),
+    )
+    plt.xlim([2, len(running_mean)])
+    ax.set_xlabel("Number of Triple Point Deltas")
+    ax.set_ylabel("Absolute Difference\nFrom Final (%)")
+    ax.set_title("Soot Foil Cell Size Measurement Convergence")
+    ax.grid(False)
+    plt.tight_layout()
+    sns.despine()
+    if save:
+        plt.savefig(
+            os.path.join(SAVE_LOC, f"{name}.{PLOT_FILETYPE}"),
+            dpi=DPI,
+        )
+
+
+@timed
 def build_soot_foil_images(
     cmap,
     image_height,
@@ -795,6 +905,7 @@ def build_soot_foil_images(
         )
 
 
+@timed
 def soot_foil_px_cal_uncertainty(
     plot_width,
     plot_height,
@@ -893,7 +1004,9 @@ def soot_foil_px_cal_uncertainty(
         zorder=-1,
     )
     plt.ylim(ax_ylim)
-    plt.title("Soot Foil Pixel Calibration Distance Repeatability Distribution")
+    plt.title(
+        "Soot Foil Pixel Calibration Distance\nRepeatability Distribution"
+    )
     plt.grid(False)
     plt.xlabel("Ruler Distance (px)")
     plt.ylabel("Probability\nDensity (1/px)")
@@ -980,66 +1093,7 @@ def soot_foil_px_loc_uncertainty():
     return uncert
 
 
-def plot_single_foil_delta_distribution(
-    plot_width,
-    plot_height,
-    save=False,
-):
-    """
-    Plots the distribution of triple point deltas for a single soot foil.
-
-    plot_width : float
-        Width of plot (in)
-    plot_height : float
-        Height of plot (in)
-    save : bool
-        Whether or not to save images
-
-    Returns
-    -------
-
-    """
-    lines_loc = os.path.join(SF_IMG_DIR, "lines.png")
-    deltas = pp_deltas.get_px_deltas_from_lines(lines_loc)
-    cell_size_mean = pp_deltas.get_cell_size_from_deltas(
-        deltas, SF_DELTA_PX, SF_DELTA_MM, np.mean
-    ).nominal_value
-    cell_size_array = pp_deltas.get_cell_size_from_deltas(
-        deltas, SF_DELTA_PX, SF_DELTA_MM, np.array
-    )
-    name = "single_foil_delta_distribution"
-    fig, ax = plt.subplots(figsize=(plot_width, plot_height))
-    fig.canvas.set_window_title(name)
-    sns.distplot(
-        unp.nominal_values(cell_size_array),
-        hist=False,
-        ax=ax,
-        color=COLOR_SF,
-    )
-    ax.axvline(
-        cell_size_mean,
-        color=COLOR_SF,
-        ls="-",
-        label=f"mean: {cell_size_mean:8.1f} mm",
-        alpha=0.75,
-    )
-    ax.legend()
-    ax.set_xlim([0, plt.xlim()[1]])
-    ax.grid(False)
-    ax.set_xlabel("Measurement (mm)")
-    ax.set_ylabel("Count")
-    ax.set_title(
-        "Single Shot Measurement Distribution\nSoot Foil, Delta Method"
-    )
-    sns.despine()
-    plt.tight_layout()
-    if save:
-        plt.savefig(
-            os.path.join(SAVE_LOC, f"{name}.{PLOT_FILETYPE}"),
-            dpi=DPI,
-        )
-
-
+@timed
 # noinspection PyUnresolvedReferences
 def calculate_soot_foil_cell_size(
     # n_schlieren_meas,
@@ -1090,10 +1144,10 @@ def calculate_soot_foil_cell_size(
         ("2020-12-27", 7),
         ("2020-12-27", 8),
     )
-    measurements = (np.zeros(len(date_shot)) * np.NaN).astype(object)
     u_d_px = soot_foil_px_loc_uncertainty()
 
     all_meas = []
+    all_uncerts = []
     for idx, (date, shot) in enumerate(date_shot):
         cal_mm, cal_px, u_cal_mm, u_cal_px = DF_SF_SPATIAL[
             (DF_SF_SPATIAL["date"] == date) & (DF_SF_SPATIAL["shot"] == shot)
@@ -1120,9 +1174,12 @@ def calculate_soot_foil_cell_size(
         # calculate!
         d_mm = d_px * cal_mm / cal_px
         all_meas.extend(list(unp.nominal_values(d_mm)))
-        # measurements[idx] = np.sum(d_mm) / len(d_mm)
-        measurements[idx] = estimator(d_mm)
+        all_uncerts.extend(list(unp.std_devs(d_mm)))
 
+    measurements = unp.uarray(
+        all_meas,
+        all_uncerts,
+    )
     meas_nominal = unp.nominal_values(measurements)
 
     if iqr_fencing:
@@ -1142,22 +1199,22 @@ def calculate_soot_foil_cell_size(
     #     n_schlieren_meas,
     #     replace=False,
     # ))
-    reduced_indices = [0, 1, 3, 5, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]
-
-    measurements = measurements[reduced_indices]
-    meas_nominal = meas_nominal[reduced_indices]
-    date_shot_index = pd.MultiIndex.from_tuples(date_shot)[reduced_indices]
+    # reduced_indices = [0, 1, 3, 5, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]
+    #
+    # measurements = measurements[reduced_indices]
+    # meas_nominal = meas_nominal[reduced_indices]
+    # date_shot_index = pd.MultiIndex.from_tuples(date_shot)[reduced_indices]
 
     # read in data
     with pd.HDFStore("/d/Data/Processed/Data/data_soot_foil.h5", "r") as store:
         df_tube = store.data.set_index(["date", "shot"], drop=True)
 
-    # trim down to only dates/shots currently in use
-    df_tube = df_tube.loc[date_shot_index]
+    # # trim down to only dates/shots currently in use
+    # df_tube = df_tube.loc[date_shot_index]
 
     # collect population uncertainty
     n_measurements = len(measurements)
-    cell_size_meas = np.sum(measurements) / n_measurements
+    cell_size_meas = estimator(measurements)
     cell_size_uncert_population = (
         meas_nominal.std()
         / np.sqrt(n_measurements)
@@ -1178,6 +1235,7 @@ def calculate_soot_foil_cell_size(
     )
 
 
+@timed
 def plot_soot_foil_measurement_distribution(
     measurements,
     cell_size_meas,
@@ -1214,7 +1272,7 @@ def plot_soot_foil_measurement_distribution(
     sns.distplot(
         measurements,
         hist=False,
-        rug=True,
+        # rug=True,
         ax=ax,
         color=COLOR_SF,
     )
@@ -1249,8 +1307,9 @@ def plot_soot_foil_measurement_distribution(
         )
 
 
+@timed
 def plot_cell_size_comparison(
-    measurements_schlieren,
+    deltas_schlieren,
     cell_size_meas_schlieren,
     cell_size_uncert_schlieren,
     measurements_foil,
@@ -1267,8 +1326,8 @@ def plot_cell_size_comparison(
 
     Parameters
     ----------
-    measurements_schlieren : np.array
-        Nominal schlieren measurements (mm)
+    deltas_schlieren : np.array
+        Nominal schlieren deltas (mm)
     cell_size_meas_schlieren : float
         Nominal measured schlieren cell size (mm)
     cell_size_uncert_schlieren : float
@@ -1294,6 +1353,7 @@ def plot_cell_size_comparison(
     """
     plot_title = "Cell Size Measurement Distributions"
     name = "cell_size_comparison"
+    measurements_schlieren = 2 * deltas_schlieren
     if zero_centered:
         name += "_zero_centered"
         plot_title += "\n(Zero Centered)"
@@ -1372,6 +1432,7 @@ def plot_cell_size_comparison(
         )
 
 
+@timed
 def get_initial_conditions(df_data):
     """
     Extract initial conditions from filtered tube dataframe
@@ -1394,9 +1455,11 @@ def get_initial_conditions(df_data):
     """
     out = {}
     for item in ("p_0", "t_0", "phi", "dil_mf", "wave_speed"):
-        out[item] = unp.uarray(
-            df_data[item], df_data[f"u_{item}"]  # instrument uncertainty
-        ).mean() + un.ufloat(  # add population uncertainty
+        out[item] = np.nanmean(
+            unp.uarray(
+                df_data[item], df_data[f"u_{item}"]  # instrument uncertainty
+            )
+        ) + un.ufloat(  # add population uncertainty
             0, df_data[item].sem() * t.ppf(0.975, len(df_data[item]) - 1)
         )
 
@@ -1439,7 +1502,7 @@ def main(
         image_height=image_height_schlieren,
         save=save,
     )
-    schlieren_deltas = plot_all_schlieren_deltas_distribution(
+    plot_all_schlieren_deltas_distribution(
         df_schlieren_frames,
         plot_width,
         plot_height,
@@ -1448,13 +1511,14 @@ def main(
     (
         cell_size_meas_schlieren,
         cell_size_uncert_schlieren,
-        schlieren_meas,
+        schlieren_meas_deltas,
         n_schlieren_meas,
     ) = calculate_schlieren_cell_size(
-        df_schlieren_tube,
+        df_schlieren_frames,
         remove_outliers,
         estimator,
     )
+    schlieren_meas = 2 * schlieren_meas_deltas
     initial_conditions_schlieren = get_initial_conditions(df_schlieren_tube)
     plot_schlieren_measurement_distribution(
         unp.nominal_values(schlieren_meas),
@@ -1465,6 +1529,8 @@ def main(
         save,
     )
     plot_schlieren_measurement_convergence(
+        cell_size_meas_schlieren,
+        cell_size_uncert_schlieren,
         unp.nominal_values(schlieren_meas),
         n_schlieren_meas,
         plot_width,
@@ -1505,6 +1571,14 @@ def main(
         plot_height,
         save,
     )
+    plot_soot_foil_measurement_convergence(
+        cell_size_meas_foil,
+        cell_size_uncert_foil,
+        all_foil_meas,
+        plot_width,
+        plot_height,
+        save,
+    )
     plot_both_delta_distributions(
         df_schlieren_frames,
         all_foil_meas,
@@ -1529,7 +1603,7 @@ def main(
 
     # comparison
     plot_cell_size_comparison(
-        unp.nominal_values(schlieren_meas),
+        unp.nominal_values(schlieren_meas_deltas),
         cell_size_meas_schlieren,
         cell_size_uncert_schlieren,
         unp.nominal_values(measurements_foil),
@@ -1541,7 +1615,7 @@ def main(
         zero_centered=False,
     )
     plot_cell_size_comparison(
-        unp.nominal_values(schlieren_meas),
+        unp.nominal_values(schlieren_meas_deltas),
         cell_size_meas_schlieren,
         cell_size_uncert_schlieren,
         unp.nominal_values(measurements_foil),
@@ -1562,10 +1636,14 @@ def main(
     report += f"soot foil/schlieren ratio: {foil_to_schlieren:.2f}\n\n"
 
     alpha = 0.05
-    # compare means
-    t_stat, t_p_value = ttest_ind(
-        unp.nominal_values(measurements_foil),
-        unp.nominal_values(schlieren_meas),
+    # compare means using from_stats so we can apply extra uncertainties
+    t_stat, t_p_value = ttest_ind_from_stats(
+        cell_size_meas_foil,
+        cell_size_uncert_foil,
+        len(measurements_foil),
+        cell_size_meas_schlieren,
+        cell_size_uncert_schlieren,
+        len(schlieren_meas),
         equal_var=False,
     )
     t_test_null = check_null_hypothesis(t_p_value, alpha)
@@ -1575,6 +1653,21 @@ def main(
         f"{means}\n"
         f"    test statistic: {t_stat:0.2f}\n"
         f"    p: {t_p_value:0.3e}\n"
+        f"    a: {alpha}\n\n"
+    )
+
+    # compare distributions
+    ks_stat, ks_p_value = ks_2samp(
+        unp.nominal_values(measurements_foil),
+        unp.nominal_values(schlieren_meas),
+    )
+    ks_test_null = check_null_hypothesis(ks_p_value, alpha)
+    dists = f"{ks_test_null} the null hypothesis that distributions are equal"
+    report += get_title_block("Distributions")
+    report += (
+        f"{dists}\n"
+        f"    test statistic: {ks_stat:0.2f}\n"
+        f"    p: {ks_p_value:0.3e}\n"
         f"    a: {alpha}\n\n"
     )
 
@@ -1602,7 +1695,7 @@ def main(
         f"    dil mf: {initial_conditions_schlieren['dil_mf'] * 100:.2f} %\n"
         f"    speed: {initial_conditions_schlieren['wave_speed']:.3f} m/s\n"
         f"           {initial_conditions_schlieren['wave_speed'] / cj:.3f} "
-        f"m/s\n"
+        f"% CJ\n"
     )
     report += (
         "soot foil:\n"
@@ -1612,16 +1705,17 @@ def main(
         f"    dil mf: {initial_conditions_soot_foil['dil_mf'] * 100:.2f} %\n"
         f"    speed: {initial_conditions_soot_foil['wave_speed']:.3f} m/s\n"
         f"           {initial_conditions_soot_foil['wave_speed'] / cj:.3f} "
-        f"m/s\n"
+        f"% CJ\n\n"
     )
 
     t_stat, t_p_value = ttest_ind(
-        df_schlieren_tube["wave_speed"],
-        df_tube_soot_foil["wave_speed"],
+        df_schlieren_tube["wave_speed"].dropna(),
+        df_tube_soot_foil["wave_speed"].dropna(),
         equal_var=False,
     )
     t_test_speed = check_null_hypothesis(t_p_value, alpha)
     report += get_title_block("Speeds")
+    report += f"CJ speed: {int(cj)} m/s\n"
     means = f"{t_test_speed} the null hypothesis that means are equal"
     report += (
         f"{means}\n"
@@ -1638,7 +1732,7 @@ def main(
 
 if __name__ == "__main__":
     remove_outliers_from_data = False
-    save_results = False
+    save_results = True
     cell_size_estimator = np.median
     main(remove_outliers_from_data, save_results, cell_size_estimator)
-    # plt.show()
+    plt.show()
