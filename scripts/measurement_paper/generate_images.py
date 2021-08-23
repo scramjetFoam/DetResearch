@@ -904,6 +904,44 @@ def build_soot_foil_images(
             dpi=DPI,
         )
 
+    # regular vs irregular
+    irreg_scalebar = get_scale_bar(
+        2268,
+        300,
+        cell_size=25.4,
+    )
+    irregular_image_path = os.path.join(
+        d_drive,
+        "Data",
+        "Processed",
+        "Soot Foil",
+        "foil images",
+        "2020-10-26",
+        "Shot 01",
+        "square.png",
+    )
+    img_irregular = sf_imread(irregular_image_path, plot=True)
+    img_regular = sf_imread(os.path.join(SF_IMG_DIR, "square_regular.png"))
+
+    # display foil images
+    name = "soot_foil_irregular_cells"
+    fig, ax = plt.subplots(1, 2, figsize=(image_width, image_height))
+    fig.canvas.set_window_title(name)
+    ax[0].imshow(img_regular, cmap=cmap)
+    ax[0].axis("off")
+    ax[0].set_title("Regular")
+    ax[0].add_artist(copy(sf_scalebar))
+    ax[1].imshow(img_irregular, cmap=cmap)
+    ax[1].axis("off")
+    ax[1].set_title("Irregular")
+    ax[1].add_artist(copy(irreg_scalebar))
+    plt.tight_layout()
+    if save:
+        plt.savefig(
+            os.path.join(SAVE_LOC, f"{name}.{PLOT_FILETYPE}"),
+            dpi=DPI,
+        )
+
 
 @timed
 def soot_foil_px_cal_uncertainty(
@@ -1595,10 +1633,14 @@ def main(
         plot_height,
         save,
     )
+    cs_mean = np.mean([cell_size_meas_foil, cell_size_meas_schlieren])
     report += (
         f"soot foil: "
         f"{cell_size_meas_foil:.2f}+/-"
         f"{cell_size_uncert_foil:.2f} mm\n"
+        f"ID/cell size: {144.018 / cs_mean:.2f}\n"
+        f"# SF deltas: {len(all_foil_meas)}\n"
+        f"# schlieren deltas: {len(schlieren_meas_deltas)}\n"
     )
 
     # comparison
