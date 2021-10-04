@@ -53,6 +53,69 @@ SAVE_LOC = os.path.join(d_drive, "Measurement-Paper", "images")
 DPI = 200
 
 
+def hex2rgb(hex_color):
+    hex_color = hex_color.replace("#", "")
+    r = int(hex_color[:2], 16)
+    g = int(hex_color[2:4], 16)
+    b = int(hex_color[4:], 16)
+
+    return r, g, b
+
+
+def rgb2hex(r, g, b):
+    out = f"#{hex(r)[2:]}{hex(g)[2:]}{hex(b)[2:]}"
+
+    return out
+
+
+def hex_add(c0, c1):
+    """
+    c0 + c1
+
+    Parameters
+    ----------
+    c0
+    c1
+
+    Returns
+    -------
+
+    """
+    r0, g0, b0 = hex2rgb(c0)
+    r1, g1, b1 = hex2rgb(c1)
+    r_out = min(255, r0 + r1)
+    g_out = min(255, g0 + g1)
+    b_out = min(255, b0 + b1)
+
+    out = rgb2hex(r_out, g_out, b_out)
+
+    return out
+
+
+def hex_sub(c0, c1):
+    """
+    c0 - c1
+
+    Parameters
+    ----------
+    c0
+    c1
+
+    Returns
+    -------
+
+    """
+    r0, g0, b0 = hex2rgb(c0)
+    r1, g1, b1 = hex2rgb(c1)
+    r_out = max(0, r0 - r1)
+    g_out = max(0, g0 - g1)
+    b_out = max(0, b0 - b1)
+
+    out = rgb2hex(r_out, g_out, b_out)
+
+    return out
+
+
 def timed(func):
     @wraps(func)
     def _timed(*args, **kwargs):
@@ -1137,6 +1200,8 @@ def calculate_soot_foil_cell_size(
     # n_schlieren_meas,
     iqr_fencing,
     estimator=np.mean,
+    use_cache=True,
+    save_cache=False,
 ):
     """
     Calculates the mean cell size from soot foil images
@@ -1160,59 +1225,87 @@ def calculate_soot_foil_cell_size(
         * Mean cell size (mm)
         * Cell size uncertainty (mm)
     """
-    date_shot = (
-        # date, shot
-        ("2020-11-12", 0),
-        ("2020-11-13", 8),
-        ("2020-11-23", 3),
-        ("2020-11-23", 4),
-        ("2020-11-23", 6),
-        ("2020-11-23", 7),
-        ("2020-11-24", 0),
-        ("2020-11-24", 3),
-        ("2020-11-24", 7),
-        ("2020-11-25", 0),
-        ("2020-12-20", 8),
-        ("2020-12-21", 9),
-        ("2020-12-27", 0),
-        ("2020-12-27", 1),
-        ("2020-12-27", 2),
-        ("2020-12-27", 3),
-        ("2020-12-27", 6),
-        ("2020-12-27", 7),
-        ("2020-12-27", 8),
+    cache_file = os.path.join(
+        d_drive,
+        "Data",
+        "Processed",
+        "Data",
+        "soot_foil_measurement_study.h5",
     )
-    u_d_px = soot_foil_px_loc_uncertainty()
 
-    all_meas = []
-    all_uncerts = []
-    for idx, (date, shot) in enumerate(date_shot):
-        cal_mm, cal_px, u_cal_mm, u_cal_px = DF_SF_SPATIAL[
-            (DF_SF_SPATIAL["date"] == date) & (DF_SF_SPATIAL["shot"] == shot)
-        ][["delta_mm", "delta_px", "u_delta_mm", "u_delta_px"]].values[0]
-        d_px = pp_deltas.get_px_deltas_from_lines(
-            os.path.join(
-                d_drive,
-                "Data",
-                "Processed",
-                "Soot Foil",
-                "foil images",
-                f"{date}",
-                f"Shot {shot:02d}",
-                "composite.png",
-            ),
-            apply_uncertainty=False,
+    if use_cache:
+        with pd.HDFStore(cache_file, "r") as store:
+            all_meas = store.data["measurements"].values
+            all_uncerts = store.data["uncertainties"].values
+    else:
+        date_shot = (
+            # date, shot
+            ("2020-11-12", 0),
+            ("2020-11-13", 8),
+            ("2020-11-23", 3),
+            ("2020-11-23", 4),
+            ("2020-11-23", 6),
+            ("2020-11-23", 7),
+            ("2020-11-24", 0),
+            ("2020-11-24", 3),
+            ("2020-11-24", 7),
+            ("2020-11-25", 0),
+            ("2020-12-20", 8),
+            ("2020-12-21", 9),
+            ("2020-12-27", 0),
+            ("2020-12-27", 1),
+            ("2020-12-27", 2),
+            ("2020-12-27", 3),
+            ("2020-12-27", 6),
+            ("2020-12-27", 7),
+            ("2020-12-27", 8),
         )
+        u_d_px = soot_foil_px_loc_uncertainty()
 
-        # apply uncertainties
-        d_px = unp.uarray(d_px, u_d_px)
-        cal_mm = un.ufloat(cal_mm, u_cal_mm)
-        cal_px = un.ufloat(cal_px, u_cal_px)
+        all_meas = []
+        all_uncerts = []
+        all_dates = []
+        all_shots = []
+        for idx, (date, shot) in enumerate(date_shot):
+            cal_mm, cal_px, u_cal_mm, u_cal_px = DF_SF_SPATIAL[
+                (DF_SF_SPATIAL["date"] == date) & (DF_SF_SPATIAL["shot"] == shot)
+            ][["delta_mm", "delta_px", "u_delta_mm", "u_delta_px"]].values[0]
+            d_px = pp_deltas.get_px_deltas_from_lines(
+                os.path.join(
+                    d_drive,
+                    "Data",
+                    "Processed",
+                    "Soot Foil",
+                    "foil images",
+                    f"{date}",
+                    f"Shot {shot:02d}",
+                    "composite.png",
+                ),
+                apply_uncertainty=False,
+            )
 
-        # calculate!
-        d_mm = d_px * cal_mm / cal_px
-        all_meas.extend(list(unp.nominal_values(d_mm)))
-        all_uncerts.extend(list(unp.std_devs(d_mm)))
+            # apply uncertainties
+            d_px = unp.uarray(d_px, u_d_px)
+            cal_mm = un.ufloat(cal_mm, u_cal_mm)
+            cal_px = un.ufloat(cal_px, u_cal_px)
+
+            # calculate!
+            d_mm = d_px * cal_mm / cal_px
+            all_meas.extend(list(unp.nominal_values(d_mm)))
+            all_uncerts.extend(list(unp.std_devs(d_mm)))
+            n_current_meas = len(d_mm)
+            all_dates.extend(list([date]*n_current_meas))
+            all_shots.extend(list([shot]*n_current_meas))
+
+        if save_cache:
+            df_meas = pd.DataFrame([
+                pd.Series(all_dates, name="date"),
+                pd.Series(all_shots, name="shot"),
+                pd.Series(all_meas, name="measurements"),
+                pd.Series(all_uncerts, name="uncertainties"),
+            ]).T
+            with pd.HDFStore(cache_file, "w") as store:
+                store.put("data", df_meas)
 
     measurements = unp.uarray(
         all_meas,
@@ -1336,6 +1429,87 @@ def plot_soot_foil_measurement_distribution(
     ax.set_ylabel("Probability Density\n(1/mm)")
     ax.set_title("Soot Foil Measurement Distribution")
     ax.grid(False)
+    sns.despine()
+    plt.tight_layout()
+    if save:
+        plt.savefig(
+            os.path.join(SAVE_LOC, f"{name}.{PLOT_FILETYPE}"),
+            dpi=DPI,
+        )
+
+
+@timed
+def perform_soot_foil_measurement_study(
+    plot_width,
+    plot_height,
+    save,
+):
+    cache_file = os.path.join(
+        d_drive,
+        "Data",
+        "Processed",
+        "Data",
+        "soot_foil_measurement_study.h5",
+    )
+    with pd.HDFStore(cache_file, "r") as store:
+        df = store.data
+
+    df["date"] = pd.to_datetime(df["date"])
+
+    grouped = df.groupby(["date", "shot"])
+    median_per_shot = np.ones(len(grouped)) * np.NaN
+    running_median = np.ones_like(median_per_shot) * np.NaN
+    mean_of_medians = np.ones_like(median_per_shot) * np.NaN
+    date_shot = []
+
+    for i, ((date, shot), df_current) in enumerate(grouped):
+        median_per_shot[i] = df_current["measurements"].median()
+        running_median[i] = df[
+            (df["date"] < date)
+            | (
+                (df["date"] == date)
+                & (df["shot"] <= shot)
+            )
+        ]["measurements"].median()
+        date_shot.append(f"{date.date().isoformat()} shot {shot}")
+        mean_of_medians[i] = median_per_shot[:i+1].mean()
+
+    plot_title = "Soot Foil Measurement"
+    name = "soot_foil_comparison"
+    fig, ax = plt.subplots(figsize=(plot_width, plot_height))
+    fig.canvas.set_window_title(name)
+    ax.plot(
+        median_per_shot,
+        label="shot median",
+        color=COLOR_SF,
+        ls="None",
+        marker=".",
+        zorder=-1,
+    )
+    ax.plot(
+        mean_of_medians,
+        label="mean of shot medians",
+        color=hex_add(COLOR_SF, "2f2f2f"),
+        linestyle="--",
+    )
+    ax.plot(
+        running_median,
+        label="pooled median",
+        color=hex_sub(COLOR_SF, "2f2f2f"),
+        ls=":",
+    )
+    ax.legend(
+        prop={"size": 6},
+        frameon=False,
+        bbox_to_anchor=(0, 1, 1, 0),
+        loc="lower left",
+        mode="expand",
+        ncol=3,
+    )
+    ax.set_xticks(np.arange(len(grouped)))
+    ax.set_xlabel("# of Soot Foils Measured")
+    ax.set_ylabel("Cell Size (mm)")
+    fig.suptitle(plot_title, y=0.92)
     sns.despine()
     plt.tight_layout()
     if save:
@@ -1613,6 +1787,11 @@ def main(
         cell_size_meas_foil,
         cell_size_uncert_foil,
         all_foil_meas,
+        plot_width,
+        plot_height,
+        save,
+    )
+    perform_soot_foil_measurement_study(
         plot_width,
         plot_height,
         save,
