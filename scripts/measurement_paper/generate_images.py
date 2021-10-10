@@ -1474,11 +1474,13 @@ def perform_soot_foil_measurement_study(
         date_shot.append(f"{date.date().isoformat()} shot {shot}")
         mean_of_medians[i] = median_per_shot[:i+1].mean()
 
+    n_foils = np.arange(len(grouped)) + 1
     plot_title = "Soot Foil Measurement"
     name = "soot_foil_comparison"
     fig, ax = plt.subplots(figsize=(plot_width, plot_height))
     fig.canvas.set_window_title(name)
     ax.plot(
+        n_foils,
         median_per_shot,
         label="shot median",
         color=COLOR_SF,
@@ -1487,12 +1489,14 @@ def perform_soot_foil_measurement_study(
         zorder=-1,
     )
     ax.plot(
+        n_foils,
         mean_of_medians,
         label="mean of shot medians",
         color=hex_add(COLOR_SF, "2f2f2f"),
         linestyle="--",
     )
     ax.plot(
+        n_foils,
         running_median,
         label="pooled median",
         color=hex_sub(COLOR_SF, "2f2f2f"),
@@ -1506,7 +1510,7 @@ def perform_soot_foil_measurement_study(
         mode="expand",
         ncol=3,
     )
-    ax.set_xticks(np.arange(len(grouped)))
+    ax.set_xticks(n_foils)
     ax.set_xlabel("# of Soot Foils Measured")
     ax.set_ylabel("Cell Size (mm)")
     fig.suptitle(plot_title, y=0.92)
