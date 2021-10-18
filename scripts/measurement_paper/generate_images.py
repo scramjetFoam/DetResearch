@@ -12,6 +12,7 @@ import uncertainties as un
 from funcs.post_processing.images.soot_foil import deltas as pp_deltas
 from matplotlib import patches
 from matplotlib import pyplot as plt
+from matplotlib.ticker import EngFormatter
 from matplotlib_scalebar.scalebar import ScaleBar
 from scipy.stats import ks_2samp, t, ttest_ind, ttest_ind_from_stats
 from skimage import io, transform
@@ -393,7 +394,7 @@ def build_schlieren_images(
     fig.canvas.set_window_title(name)
     ax.imshow(schlieren_raw, cmap=cmap)
     ax.axis("off")
-    ax.set_title("Raw")
+    # ax.set_title("Raw")
     ax.grid(False)
     plt.tight_layout()
     if save:
@@ -408,7 +409,7 @@ def build_schlieren_images(
     fig.canvas.set_window_title(name)
     ax.imshow(schlieren_raw, cmap=cmap)
     ax.axis("off")
-    ax.set_title("Measurements")
+    # ax.set_title("Measurements")
     ax.grid(False)
     for loc_px in df_meas[
         (df_meas["date"] == date)
@@ -557,7 +558,7 @@ def plot_schlieren_measurement_distribution(
     ax.set_ylim(ax_ylim)
     ax.set_xlabel("Measured Cell Size (mm)")
     ax.set_ylabel("Probability Density\n(1/mm)")
-    ax.set_title("Schlieren Cell Size Measurement Distribution")
+    # ax.set_title("Schlieren Cell Size Measurement Distribution")
     ax.grid(False)
     plt.tight_layout()
     sns.despine()
@@ -604,10 +605,11 @@ def plot_all_schlieren_deltas_distribution(
         deltas,
         ax=ax,
         color=COLOR_SC,
+        clip=[0, 100],
     )
     ax.set_xlabel("Triple Point Delta (mm)")
     ax.set_ylabel("Probability Density\n(1/mm)")
-    ax.set_title("Schlieren Triple Point Delta Distribution")
+    # ax.set_title("Schlieren Triple Point Delta Distribution")
     ax.grid(False)
     plt.tight_layout()
     sns.despine()
@@ -652,11 +654,13 @@ def plot_all_soot_foil_deltas_distribution(
         soot_foil_meas,
         ax=ax,
         color=COLOR_SF,
+        clip=[0, 100],
     )
     ax.set_xlabel("Triple Point Delta (mm)")
     ax.set_ylabel("Probability Density\n(1/mm)")
-    ax.set_title("Soot Foil Triple Point Delta Distribution")
+    # ax.set_title("Soot Foil Triple Point Delta Distribution")
     ax.grid(False)
+    plt.xlim([0, 100])
     plt.tight_layout()
     sns.despine()
     if save:
@@ -706,16 +710,19 @@ def plot_both_delta_distributions(
         ax=ax,
         color=COLOR_SC,
         label="Schlieren",
+        clip=[0, 100],
     )
     sns.kdeplot(
         soot_foil_meas,
         ax=ax,
         color=COLOR_SF,
         label="Soot Foil",
+        clip=[0, 100],
     )
     ax.set_xlabel("Triple Point Delta (mm)")
     ax.set_ylabel("Probability Density\n(1/mm)")
-    ax.set_title("Triple Point Delta Distributions")
+    plt.xlim([0, 100])
+    # ax.set_title("Triple Point Delta Distributions")
     ax.grid(False)
     plt.legend(frameon=False)
     plt.tight_layout()
@@ -771,12 +778,12 @@ def plot_schlieren_measurement_convergence(
         n_schlieren_meas,
         min_periods=0,
     ).median()
-    plt.plot(
+    ax.plot(
         n_meas,
         np.abs(running_mean - schlieren_meas) * 100 / schlieren_meas,
         c=COLOR_SC,
     )
-    plt.axhline(
+    ax.axhline(
         schlieren_uncert / schlieren_meas * 100,
         c="k",
         alpha=0.5,
@@ -784,10 +791,10 @@ def plot_schlieren_measurement_convergence(
         lw=0.5,
         ls=(0, (5, 1, 1, 1)),
     )
-    plt.xlim([2, len(running_mean)])
+    ax.set_xlim([2, len(running_mean)])
     ax.set_xlabel("Number of Triple Point Deltas")
     ax.set_ylabel("Absolute Difference\nFrom Final (%)")
-    ax.set_title("Schlieren Cell Size Measurement Convergence")
+    # ax.set_title("Schlieren Cell Size Measurement Convergence")
     ax.grid(False)
     plt.tight_layout()
     sns.despine()
@@ -840,12 +847,12 @@ def plot_soot_foil_measurement_convergence(
         n_meas,
         min_periods=0,
     ).median()
-    plt.plot(
+    ax.plot(
         meas_range,
         np.abs(running_mean - nominal_measurement) * 100 / nominal_measurement,
         c=COLOR_SF,
     )
-    plt.axhline(
+    ax.axhline(
         uncert / nominal_measurement * 100,
         c="k",
         alpha=0.5,
@@ -853,10 +860,11 @@ def plot_soot_foil_measurement_convergence(
         lw=0.5,
         ls=(0, (5, 1, 1, 1)),
     )
-    plt.xlim([2, len(running_mean)])
+    ax.set_xlim([2, len(running_mean)])
     ax.set_xlabel("Number of Triple Point Deltas")
     ax.set_ylabel("Absolute Difference\nFrom Final (%)")
-    ax.set_title("Soot Foil Cell Size Measurement Convergence")
+    ax.xaxis.set_major_formatter(EngFormatter())
+    # ax.set_title("Soot Foil Cell Size Measurement Convergence")
     ax.grid(False)
     plt.tight_layout()
     sns.despine()
@@ -911,10 +919,10 @@ def build_soot_foil_images(
     fig.canvas.set_window_title(name)
     ax[0].imshow(sf_img, cmap=cmap)
     ax[0].axis("off")
-    ax[0].set_title("Soot Foil")
+    # ax[0].set_title("Soot Foil")
     ax[1].imshow(sf_img_lines_thk, cmap=cmap)
     ax[1].axis("off")
-    ax[1].set_title("Traced Cells")
+    # ax[1].set_title("Traced Cells")
     for a in ax:
         a.add_artist(
             copy(sf_scalebar),
@@ -938,7 +946,7 @@ def build_soot_foil_images(
     fig.canvas.set_window_title(name)
     ax.imshow(sf_img_lines_z, cmap=cmap)
     plt.axis("off")
-    plt.title("Traced Cells\n(Close-up)")
+    # plt.title("Traced Cells\n(Close-up)")
     lines_scale = 900 / 330  # scaled up for quality
     arrow_x = 160 * lines_scale
     arrow_length = np.array([36, 32, 86, 52, 88, 35, 50]) * lines_scale
@@ -992,11 +1000,11 @@ def build_soot_foil_images(
     fig.canvas.set_window_title(name)
     ax[0].imshow(img_regular, cmap=cmap)
     ax[0].axis("off")
-    ax[0].set_title("Regular")
+    # ax[0].set_title("Regular")
     ax[0].add_artist(copy(sf_scalebar))
     ax[1].imshow(img_irregular, cmap=cmap)
     ax[1].axis("off")
-    ax[1].set_title("Irregular")
+    # ax[1].set_title("Irregular")
     ax[1].add_artist(copy(irreg_scalebar))
     plt.tight_layout()
     if save:
@@ -1105,9 +1113,9 @@ def soot_foil_px_cal_uncertainty(
         zorder=-1,
     )
     plt.ylim(ax_ylim)
-    plt.title(
-        "Soot Foil Pixel Calibration Distance\nRepeatability Distribution"
-    )
+    # plt.title(
+    #     "Soot Foil Pixel Calibration Distance\nRepeatability Distribution"
+    # )
     plt.grid(False)
     plt.xlabel("Ruler Distance (px)")
     plt.ylabel("Probability\nDensity (1/px)")
@@ -1239,13 +1247,16 @@ def calculate_soot_foil_cell_size(
             all_uncerts = store.data["uncertainties"].values
     else:
         date_shot = (
+            # remove 4 at random
+            # np.random.choice(range(19), 4, False)
+            # Out[3]: array([16, 4, 5, 6])
             # date, shot
             ("2020-11-12", 0),
             ("2020-11-13", 8),
             ("2020-11-23", 3),
-            ("2020-11-23", 4),
-            ("2020-11-23", 6),
-            ("2020-11-23", 7),
+            # ("2020-11-23", 4),
+            # ("2020-11-23", 6),
+            # ("2020-11-23", 7),
             ("2020-11-24", 0),
             ("2020-11-24", 3),
             ("2020-11-24", 7),
@@ -1255,7 +1266,7 @@ def calculate_soot_foil_cell_size(
             ("2020-12-27", 0),
             ("2020-12-27", 1),
             ("2020-12-27", 2),
-            ("2020-12-27", 3),
+            # ("2020-12-27", 3),
             ("2020-12-27", 6),
             ("2020-12-27", 7),
             ("2020-12-27", 8),
@@ -1427,8 +1438,9 @@ def plot_soot_foil_measurement_distribution(
     ax.set_ylim(ax_ylim)
     ax.set_xlabel("Cell Size (mm)")
     ax.set_ylabel("Probability Density\n(1/mm)")
-    ax.set_title("Soot Foil Measurement Distribution")
+    # ax.set_title("Soot Foil Measurement Distribution")
     ax.grid(False)
+    plt.xlim([0, 100])
     sns.despine()
     plt.tight_layout()
     if save:
@@ -1513,7 +1525,7 @@ def perform_soot_foil_measurement_study(
     ax.set_xticks(n_foils)
     ax.set_xlabel("# of Soot Foils Measured")
     ax.set_ylabel("Cell Size (mm)")
-    fig.suptitle(plot_title, y=0.92)
+    # fig.suptitle(plot_title, y=0.92)
     sns.despine()
     plt.tight_layout()
     if save:
@@ -1635,9 +1647,12 @@ def plot_cell_size_comparison(
             zorder=-1,
         )
         ax.set_ylim(ax_ylim)
+        plt.xlim([0, 100])
+    else:
+        plt.xlim([-100, 100])
     ax.set_xlabel("Measured Cell Size (mm)")
     ax.set_ylabel("Probability Density\n(1/mm)")
-    ax.set_title(plot_title)
+    # ax.set_title(plot_title)
     ax.grid(False)
     sns.despine()
     plt.tight_layout()
