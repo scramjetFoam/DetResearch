@@ -12,7 +12,6 @@ import uncertainties as un
 from funcs.post_processing.images.soot_foil import deltas as pp_deltas
 from matplotlib import patches
 from matplotlib import pyplot as plt
-from matplotlib.ticker import EngFormatter
 from matplotlib_scalebar.scalebar import ScaleBar
 from scipy.stats import ks_2samp, t, ttest_ind, ttest_ind_from_stats
 from skimage import io, transform
@@ -443,6 +442,8 @@ def calculate_schlieren_cell_size(
         DataFrame containing schlieren data
     iqr_fencing : bool
         Remove outliers using IQR fencing?
+    estimator : func
+        Estimator function to use
 
     Returns
     -------
@@ -863,7 +864,12 @@ def plot_soot_foil_measurement_convergence(
     ax.set_xlim([2, len(running_mean)])
     ax.set_xlabel("Number of Triple Point Deltas")
     ax.set_ylabel("Absolute Difference\nFrom Final (%)")
-    ax.xaxis.set_major_formatter(EngFormatter())
+    plt.ticklabel_format(
+        style="sci",
+        axis="x",
+        scilimits=(0, 0),
+        useMathText=True,
+    )
     # ax.set_title("Soot Foil Cell Size Measurement Convergence")
     ax.grid(False)
     plt.tight_layout()
@@ -1224,6 +1230,12 @@ def calculate_soot_foil_cell_size(
         preserved and will be used for the sake of continuity.
     iqr_fencing : bool
         Remove outliers using IQR fencing?
+    estimator : func
+        Estimator function to use
+    use_cache : bool
+        Use cached data?
+    save_cache : bool
+        Overwrite cached data?
 
     Returns
     -------
@@ -1279,7 +1291,8 @@ def calculate_soot_foil_cell_size(
         all_shots = []
         for idx, (date, shot) in enumerate(date_shot):
             cal_mm, cal_px, u_cal_mm, u_cal_px = DF_SF_SPATIAL[
-                (DF_SF_SPATIAL["date"] == date) & (DF_SF_SPATIAL["shot"] == shot)
+                (DF_SF_SPATIAL["date"] == date) &
+                (DF_SF_SPATIAL["shot"] == shot)
             ][["delta_mm", "delta_px", "u_delta_mm", "u_delta_px"]].values[0]
             d_px = pp_deltas.get_px_deltas_from_lines(
                 os.path.join(
@@ -1487,7 +1500,7 @@ def perform_soot_foil_measurement_study(
         mean_of_medians[i] = median_per_shot[:i+1].mean()
 
     n_foils = np.arange(len(grouped)) + 1
-    plot_title = "Soot Foil Measurement"
+    # plot_title = "Soot Foil Measurement"
     name = "soot_foil_comparison"
     fig, ax = plt.subplots(figsize=(plot_width, plot_height))
     fig.canvas.set_window_title(name)
