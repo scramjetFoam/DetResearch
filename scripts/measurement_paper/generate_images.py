@@ -848,13 +848,14 @@ def plot_soot_foil_measurement_convergence(
         n_meas,
         min_periods=0,
     ).median()
+    uncert_pct = uncert / nominal_measurement * 100
     ax.plot(
         meas_range,
         np.abs(running_mean - nominal_measurement) * 100 / nominal_measurement,
         c=COLOR_SF,
     )
     ax.axhline(
-        uncert / nominal_measurement * 100,
+        uncert_pct,
         c="k",
         alpha=0.5,
         zorder=-1,
@@ -879,6 +880,8 @@ def plot_soot_foil_measurement_convergence(
             os.path.join(SAVE_LOC, f"{name}.{PLOT_FILETYPE}"),
             dpi=DPI,
         )
+
+    return uncert_pct
 
 
 @timed
@@ -1289,6 +1292,7 @@ def calculate_soot_foil_cell_size(
         all_uncerts = []
         all_dates = []
         all_shots = []
+        all_n_deltas = np.ones(len(date_shot)) * np.NaN
         for idx, (date, shot) in enumerate(date_shot):
             cal_mm, cal_px, u_cal_mm, u_cal_px = DF_SF_SPATIAL[
                 (DF_SF_SPATIAL["date"] == date) &
@@ -1307,6 +1311,7 @@ def calculate_soot_foil_cell_size(
                 ),
                 apply_uncertainty=False,
             )
+            all_n_deltas[idx] = len(d_px)
 
             # apply uncertainties
             d_px = unp.uarray(d_px, u_d_px)
@@ -1468,6 +1473,7 @@ def perform_soot_foil_measurement_study(
     plot_width,
     plot_height,
     save,
+    uncert_pct,
 ):
     cache_file = os.path.join(
         d_drive,
@@ -1499,6 +1505,15 @@ def perform_soot_foil_measurement_study(
         date_shot.append(f"{date.date().isoformat()} shot {shot}")
         mean_of_medians[i] = median_per_shot[:i+1].mean()
 
+    # normalize shot median by mean of the two methods
+    median_per_shot /= np.mean((mean_of_medians[-1], median_per_shot[-1]))
+    median_per_shot = np.abs(median_per_shot - 1) * 100
+    # normalize
+    mean_of_medians /= mean_of_medians[-1]
+    mean_of_medians = np.abs(mean_of_medians - 1) * 100
+    running_median /= running_median[-1]
+    running_median = np.abs(running_median - 1) * 100
+
     n_foils = np.arange(len(grouped)) + 1
     # plot_title = "Soot Foil Measurement"
     name = "soot_foil_comparison"
@@ -1527,6 +1542,14 @@ def perform_soot_foil_measurement_study(
         color=hex_sub(COLOR_SF, "2f2f2f"),
         ls=":",
     )
+    ax.axhline(
+        uncert_pct,
+        c="k",
+        alpha=0.5,
+        zorder=-1,
+        lw=0.5,
+        ls=(0, (5, 1, 1, 1)),
+    )
     ax.legend(
         prop={"size": 6},
         frameon=False,
@@ -1536,8 +1559,8 @@ def perform_soot_foil_measurement_study(
         ncol=3,
     )
     ax.set_xticks(n_foils)
-    ax.set_xlabel("# of Soot Foils Measured")
-    ax.set_ylabel("Cell Size (mm)")
+    ax.set_xlabel("Number of Soot Foils Measured")
+    ax.set_ylabel("Absolute Difference\nFrom Final (%)")
     # fig.suptitle(plot_title, y=0.92)
     sns.despine()
     plt.tight_layout()
@@ -1815,7 +1838,7 @@ def main(
         plot_height,
         save,
     )
-    plot_soot_foil_measurement_convergence(
+    uncert_pct = plot_soot_foil_measurement_convergence(
         cell_size_meas_foil,
         cell_size_uncert_foil,
         all_foil_meas,
@@ -1827,6 +1850,7 @@ def main(
         plot_width,
         plot_height,
         save,
+        uncert_pct,
     )
     plot_both_delta_distributions(
         df_schlieren_frames,
