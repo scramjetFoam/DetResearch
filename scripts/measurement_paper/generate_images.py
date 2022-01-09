@@ -4,6 +4,8 @@ from copy import copy
 from functools import wraps
 from time import time
 
+import skimage.filters
+
 import funcs
 import numpy as np
 import pandas as pd
@@ -273,6 +275,16 @@ def get_schlieren_data(estimator):
             )
         ] = store.data.iloc[0].values
 
+    # After some analysis it looks like I was dumb and used u_delta_px as
+    # u_loc_px. This gives an overly large estimate of uncertainty for
+    # schlieren. Fix that before continuing with the analysis.
+    df_schlieren_all_frames.loc[:, "u_delta_px"] = (
+        df_schlieren_all_frames["u_loc_px"].copy()
+    )
+    df_schlieren_all_frames.loc[:, "u_loc_px"] = df_schlieren_all_frames[
+        "u_loc_px"
+    ].div(np.sqrt(2))
+
     # calculate cell size measurements
     df_schlieren_tube = df_schlieren_tube[
         np.isclose(df_schlieren_tube["phi_nom"], 1)
@@ -284,10 +296,11 @@ def get_schlieren_data(estimator):
     df_schlieren_tube["cell_size"] = np.NaN
     df_schlieren_tube["u_cell_size"] = np.NaN
 
+    u_delta_bias = np.sqrt(2) / 2
     deltas = unp.uarray(
         df_schlieren_all_frames["delta_px"],
-        df_schlieren_all_frames["u_delta_px"],
-    )
+        df_schlieren_all_frames["u_delta_px"],  # precision only
+    ) + un.ufloat(0, u_delta_bias)
     spatials = unp.uarray(
         df_schlieren_all_frames["spatial_centerline"],
         df_schlieren_all_frames["u_spatial_centerline"],
@@ -337,6 +350,8 @@ def build_schlieren_images(
     image_width=None,
     image_height=None,
     save=False,
+    limits_x=(10, 110),
+    limits_y=(10, 210),
 ):
     """
     Generates images of:
@@ -359,6 +374,10 @@ def build_schlieren_images(
         Image height (in)
     save : bool
         Whether or not to save images
+    limits_x : tuple
+        X limits of trimmed image
+    limits_y : tuple
+        Y limits of trimmed image
 
     Returns
     -------
@@ -386,6 +405,24 @@ def build_schlieren_images(
             f"frame_{frame:02d}"
         )
         schlieren_raw = np.fliplr(store[key])
+
+    # trim image to ROI
+    limits_x = sorted(limits_x)
+    limits_y = sorted(limits_y)
+    schlieren_raw = (
+        schlieren_raw[np.arange(*limits_y), :][:, np.arange(*limits_x)]
+    )
+    schlieren_raw /= schlieren_raw.max()
+    schlieren_raw = skimage.filters.unsharp_mask(
+        schlieren_raw,
+        radius=1.5,
+        amount=3,
+    )
+    df_meas = df_meas[
+        (df_meas["loc_px"] >= limits_y[0])
+        & (df_meas["loc_px"] <= limits_y[1])
+    ]
+    df_meas["loc_px"] -= limits_y[0]
 
     # raw frame
     name = "schlieren_frame_raw"
@@ -488,11 +525,16 @@ def calculate_schlieren_cell_size(
             )
         )
     )
+    uncertainty = {
+        "instrument": cell_size_meas.std_dev,
+        "population": cell_size_uncert_population,
+        "total": cell_size_uncert_schlieren,
+    }
 
     # noinspection PyUnresolvedReferences
     return (
         cell_size_meas.nominal_value,
-        cell_size_uncert_schlieren,
+        uncertainty,
         meas,
         n_meas,
     )
@@ -1153,7 +1195,7 @@ def get_all_image_px_locs(img):
     return np.apply_along_axis(find_row_px_loc, 1, img)
 
 
-def soot_foil_px_loc_uncertainty():
+def soot_foil_px_delta_uncertainty():
     # add measurement pixel location precision uncertainty
     # estimate using IMG_1983 (2020-12-27 Shot 03)
     images = funcs.post_processing.images.schlieren.find_images_in_dir(
@@ -1185,7 +1227,7 @@ def soot_foil_px_loc_uncertainty():
         repeatability_px_locs[:, i] = get_all_image_px_locs(img)
 
     # use max std of all rows as uncertainty estimate
-    u_px_loc_precision = (
+    u_px_delta_precision = (
         np.std(
             repeatability_px_locs,
             axis=1,
@@ -1195,18 +1237,20 @@ def soot_foil_px_loc_uncertainty():
             0.975,
             n_repeatability_images - 1,
         )
-    )
+    ) * np.sqrt(2)  # accounts for propagation in delta
+
+    u_px_delta_bias = 0.5 * np.sqrt(2)  # accounts for propagation in delta
 
     # calculate and apply new measurement pixel location precision uncertainty
-    uncert = np.sqrt(
-        np.sum(
-            np.square(
-                np.array([0.5, u_px_loc_precision])
-            )  # bias -- 1/2 px  # precision
-        )
-    ) * np.sqrt(
-        2
-    )  # sqrt 2 to account for propagation in delta
+    uncert_total = np.sqrt(
+        np.sum(np.square(np.array([u_px_delta_bias, u_px_delta_precision])))
+    )
+
+    uncert = {
+        "bias": u_px_delta_bias,
+        "precision": u_px_delta_precision,
+        "total": uncert_total
+    }
 
     return uncert
 
@@ -1255,11 +1299,14 @@ def calculate_soot_foil_cell_size(
         "Data",
         "soot_foil_measurement_study.h5",
     )
+    uncert_delta_px = soot_foil_px_delta_uncertainty()
 
     if use_cache:
         with pd.HDFStore(cache_file, "r") as store:
             all_meas = store.data["measurements"].values
-            all_uncerts = store.data["uncertainties"].values
+            all_total_uncerts = store.data["total_uncertainties"].values
+            all_cal_px_uncerts = store.data["u_cal_px"].values
+            all_cal_mm_uncerts = store.data["u_cal_mm"].values
     else:
         date_shot = (
             # remove 4 at random
@@ -1286,12 +1333,14 @@ def calculate_soot_foil_cell_size(
             ("2020-12-27", 7),
             ("2020-12-27", 8),
         )
-        u_d_px = soot_foil_px_loc_uncertainty()
+        u_d_px = uncert_delta_px["total"]
 
         all_meas = []
-        all_uncerts = []
+        all_total_uncerts = []
         all_dates = []
         all_shots = []
+        all_cal_mm_uncerts = []
+        all_cal_px_uncerts = []
         all_n_deltas = np.ones(len(date_shot)) * np.NaN
         for idx, (date, shot) in enumerate(date_shot):
             cal_mm, cal_px, u_cal_mm, u_cal_px = DF_SF_SPATIAL[
@@ -1312,6 +1361,8 @@ def calculate_soot_foil_cell_size(
                 apply_uncertainty=False,
             )
             all_n_deltas[idx] = len(d_px)
+            all_cal_mm_uncerts.append(u_cal_mm)
+            all_cal_px_uncerts.append(u_cal_px)
 
             # apply uncertainties
             d_px = unp.uarray(d_px, u_d_px)
@@ -1321,7 +1372,7 @@ def calculate_soot_foil_cell_size(
             # calculate!
             d_mm = d_px * cal_mm / cal_px
             all_meas.extend(list(unp.nominal_values(d_mm)))
-            all_uncerts.extend(list(unp.std_devs(d_mm)))
+            all_total_uncerts.extend(list(unp.std_devs(d_mm)))
             n_current_meas = len(d_mm)
             all_dates.extend(list([date]*n_current_meas))
             all_shots.extend(list([shot]*n_current_meas))
@@ -1331,14 +1382,16 @@ def calculate_soot_foil_cell_size(
                 pd.Series(all_dates, name="date"),
                 pd.Series(all_shots, name="shot"),
                 pd.Series(all_meas, name="measurements"),
-                pd.Series(all_uncerts, name="uncertainties"),
+                pd.Series(all_total_uncerts, name="total_uncertainties"),
+                pd.Series(all_cal_px_uncerts, name="u_cal_px"),
+                pd.Series(all_cal_mm_uncerts, name="u_cal_mm"),
             ]).T
             with pd.HDFStore(cache_file, "w") as store:
                 store.put("data", df_meas)
 
     measurements = unp.uarray(
         all_meas,
-        all_uncerts,
+        all_total_uncerts,
     )
     meas_nominal = unp.nominal_values(measurements)
 
@@ -1374,6 +1427,13 @@ def calculate_soot_foil_cell_size(
 
     # collect population uncertainty
     n_measurements = len(measurements)
+    if n_measurements // 2:
+        # an even numbered dataset means that median is the mean of the two
+        # middle numbers. This drops the uncertainty, which is rude. Since
+        # this is a huge dataset with a small uncertainty, this is done to be
+        # conservative.
+        n_measurements -= 1
+        measurements = measurements[1:]
     cell_size_meas = estimator(measurements)
     cell_size_uncert_population = (
         meas_nominal.std()
@@ -1385,11 +1445,22 @@ def calculate_soot_foil_cell_size(
     cell_size_uncert = np.sqrt(
         np.sum(np.square([cell_size_uncert_population, cell_size_meas.std_dev]))
     )
+    uncertainty = {
+        "instrument":
+            {
+                "triple_point_delta_px": uncert_delta_px,
+                "cal_px": np.mean(all_cal_px_uncerts),
+                "cal_mm": np.mean(all_cal_mm_uncerts),
+                "total_mm": cell_size_meas.std_dev,
+            },
+        "population": cell_size_uncert_population,
+        "total": cell_size_uncert,
+    }
 
     return (
         measurements,
         cell_size_meas.nominal_value,
-        cell_size_uncert,
+        uncertainty,
         df_tube,
         all_meas,
     )
@@ -1522,7 +1593,7 @@ def perform_soot_foil_measurement_study(
     ax.plot(
         n_foils,
         median_per_shot,
-        label="shot median",
+        label="foil median",
         color=COLOR_SF,
         ls="None",
         marker=".",
@@ -1531,7 +1602,7 @@ def perform_soot_foil_measurement_study(
     ax.plot(
         n_foils,
         mean_of_medians,
-        label="mean of shot medians",
+        label="mean of foil medians",
         color=hex_add(COLOR_SF, "2f2f2f"),
         linestyle="--",
     )
@@ -1777,7 +1848,7 @@ def main(
     )
     (
         cell_size_meas_schlieren,
-        cell_size_uncert_schlieren,
+        cell_size_uncert_schlieren_dict,
         schlieren_meas_deltas,
         n_schlieren_meas,
     ) = calculate_schlieren_cell_size(
@@ -1785,6 +1856,7 @@ def main(
         remove_outliers,
         estimator,
     )
+    cell_size_uncert_schlieren = cell_size_uncert_schlieren_dict["total"]
     schlieren_meas = 2 * schlieren_meas_deltas
     initial_conditions_schlieren = get_initial_conditions(df_schlieren_tube)
     plot_schlieren_measurement_distribution(
@@ -1809,6 +1881,9 @@ def main(
         f"schlieren: "
         f"{cell_size_meas_schlieren:.2f}+/-"
         f"{cell_size_uncert_schlieren:.2f} mm\n"
+        f"    u_instrument: {cell_size_uncert_schlieren_dict['instrument']}\n"
+        f"    u_population: {cell_size_uncert_schlieren_dict['population']}\n"
+        f"    u_total: {cell_size_uncert_schlieren_dict['total']}\n"
     )
 
     # do soot foil stuff
@@ -1825,13 +1900,16 @@ def main(
     (
         measurements_foil,
         cell_size_meas_foil,
-        cell_size_uncert_foil,
+        cell_size_uncert_foil_dict,
         df_tube_soot_foil,
         all_foil_meas,
     ) = calculate_soot_foil_cell_size(
         remove_outliers,
         estimator,
+        # use_cache=False,
+        # save_cache=True,
     )
+    cell_size_uncert_foil = cell_size_uncert_foil_dict["total"]
     plot_all_soot_foil_deltas_distribution(
         all_foil_meas,
         plot_width,
@@ -1873,6 +1951,9 @@ def main(
         f"soot foil: "
         f"{cell_size_meas_foil:.2f}+/-"
         f"{cell_size_uncert_foil:.2f} mm\n"
+        f"    u_instrument: {cell_size_uncert_foil_dict['instrument']}\n"
+        f"    u_population: {cell_size_uncert_foil_dict['population']}\n"
+        f"    u_total: {cell_size_uncert_foil_dict['total']}\n"
         f"ID/cell size: {144.018 / cs_mean:.2f}\n"
         f"# SF deltas: {len(all_foil_meas)}\n"
         f"# schlieren deltas: {len(schlieren_meas_deltas)}\n"
