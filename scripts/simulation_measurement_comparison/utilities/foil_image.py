@@ -210,7 +210,7 @@ def _get_diffs_from_sub_row(sub_row):
         cell_boundary_index_diffs[cell_boundary_index_diffs > 1]
     )
 
-    return np.diff(cell_boundary_index_diffs)
+    return cell_boundary_index_diffs
 
 
 def _get_diffs_from_row(row):
