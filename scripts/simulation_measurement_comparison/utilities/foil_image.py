@@ -4,10 +4,11 @@ Modified tools from funcs:
 * functions are a bit purer
 * individual directional images are loaded rather than composite
 
-todo: automate image load in/directory checks (does exclusion exist etc.)
 todo: add tests
 todo: compare exclusion/non-exclusion measurements
 """
+
+import os
 
 import numpy as np
 from skimage import io, color
@@ -22,19 +23,73 @@ class ImageProcessingError(Exception):
     pass
 
 
+def collect_shot_deltas(shot_dir):
+    """
+    Reads in images in a given directory and calculates all deltas, with
+    exclusion zones accounted for (if the files exist).
+
+    Parameters
+    ----------
+    shot_dir: str
+        Directory where images for this shot are located.
+
+    Returns
+    -------
+    np.ndarray
+        Array of measured deltas.
+    """
+    dir0_path = os.path.join(shot_dir, "dir0.png")
+    dir1_path = os.path.join(shot_dir, "dir1.png")
+    trash0_path = os.path.join(shot_dir, "trash0.png")
+    trash1_path = os.path.join(shot_dir, "trash1.png")
+
+    # lines are mandatory
+    if os.path.exists(dir0_path):
+        dir0_img = load_image(dir0_path)
+    else:
+        raise ImageProcessingError(f"{dir0_path} does not exist")
+    if os.path.exists(dir1_path):
+        dir1_img = load_image(dir1_path)
+    else:
+        raise ImageProcessingError(f"{dir1_path} does not exist")
+
+    # exclusion zones are optional
+    if os.path.exists(trash0_path):
+        trash0_img = load_image(trash0_path)
+    else:
+        trash0_img = np.zeros_like(dir0_img)
+    if os.path.exists(trash1_path):
+        trash1_img = load_image(trash1_path)
+    else:
+        trash1_img = np.zeros_like(dir1_img)
+
+    deltas0 = get_px_deltas_from_lines(
+        lines_img_in=dir0_img,
+        exclusion_img_in=trash0_img,
+    )
+    deltas1 = get_px_deltas_from_lines(
+        lines_img_in=dir1_img,
+        exclusion_img_in=trash1_img,
+    )
+    deltas = np.hstack((deltas0, deltas1))
+
+    return deltas
+
+
 def load_image(img_path):
     """
     Loads in an image as a black and white array
 
     Parameters
     ----------
-    img_path
+    img_path: str
+        Path of image to be loaded in.
 
     Returns
     -------
 
     """
-    return color.rgb2gray(io.imread(img_path))
+    return _binarize_array(color.rgb2gray(io.imread(img_path)))
 
 
 def _binarize_array(arr_in):
@@ -64,7 +119,7 @@ def _binarize_array(arr_in):
 
 def get_px_deltas_from_lines(
     lines_img_in,
-    exclusion_img_in=None,
+    exclusion_img_in,
     apply_uncertainty=True,
 ):
     """
@@ -88,18 +143,15 @@ def get_px_deltas_from_lines(
     deltas : np.ndarray
         Triple point distances, in pixels.
     """
-    lines_img = _binarize_array(lines_img_in)
+    lines_img = lines_img_in.copy()
 
-    if isinstance(exclusion_img_in, np.ndarray):
-        if exclusion_img_in.shape != lines_img.shape:
-            raise ImageProcessingError(
-                f"image shape mismatch: "
-                f"{exclusion_img_in.shape} vs. {lines_img.shape}"
-            )
-        else:
-            exclusion_img = _binarize_array(exclusion_img_in)
+    if exclusion_img_in.shape != lines_img.shape:
+        raise ImageProcessingError(
+            f"image shape mismatch: "
+            f"{exclusion_img_in.shape} vs. {lines_img.shape}"
+        )
     else:
-        exclusion_img = np.zeros_like(lines_img)
+        exclusion_img = exclusion_img_in.copy()
 
     # NaN out exclusion zones
     lines_img = np.where(exclusion_img == 1, np.NaN, lines_img)
