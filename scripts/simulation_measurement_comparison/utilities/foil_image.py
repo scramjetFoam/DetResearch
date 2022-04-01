@@ -23,7 +23,10 @@ class ImageProcessingError(Exception):
     pass
 
 
-def collect_shot_deltas(shot_dir):
+def collect_shot_deltas(
+    shot_dir,
+    use_exclusion_if_available=True,
+):
     """
     Reads in images in a given directory and calculates all deltas, with
     exclusion zones accounted for (if the files exist).
@@ -32,6 +35,8 @@ def collect_shot_deltas(shot_dir):
     ----------
     shot_dir: str
         Directory where images for this shot are located.
+    use_exclusion_if_available: bool
+        Optionally ignore exclusion zones even if they _do_ exist.
 
     Returns
     -------
@@ -54,11 +59,11 @@ def collect_shot_deltas(shot_dir):
         raise ImageProcessingError(f"{dir1_path} does not exist")
 
     # exclusion zones are optional
-    if os.path.exists(trash0_path):
+    if os.path.exists(trash0_path) and use_exclusion_if_available:
         trash0_img = load_image(trash0_path)
     else:
         trash0_img = np.zeros_like(dir0_img)
-    if os.path.exists(trash1_path):
+    if os.path.exists(trash1_path) and use_exclusion_if_available:
         trash1_img = load_image(trash1_path)
     else:
         trash1_img = np.zeros_like(dir1_img)
