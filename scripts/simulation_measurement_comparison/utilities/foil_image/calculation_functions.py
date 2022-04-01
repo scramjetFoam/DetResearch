@@ -1,84 +1,24 @@
 """
-Modified tools from funcs:
+Modified tools from funcs
+
 * exclusion zones are now included
 * functions are a bit purer
 * individual directional images are loaded rather than composite
 
-todo: add tests
-todo: compare exclusion/non-exclusion measurements
-"""
+If you're using this to calculate stuff, you probably want to just stick to
+the api. Why are you in here?
 
-import os
+todo: add tests
+"""
 
 import numpy as np
 from skimage import io, color
 from uncertainties import unumpy as unp
-
 from funcs.uncertainty import add_uncertainty_terms, u_cell
 
+from . import exceptions
+
 u_cell = u_cell["soot_foil"]
-
-
-class ImageProcessingError(Exception):
-    pass
-
-
-def collect_shot_deltas(
-    shot_dir,
-    use_exclusion_if_available=True,
-):
-    """
-    Reads in images in a given directory and calculates all deltas, with
-    exclusion zones accounted for (if the files exist).
-
-    Parameters
-    ----------
-    shot_dir: str
-        Directory where images for this shot are located.
-    use_exclusion_if_available: bool
-        Optionally ignore exclusion zones even if they _do_ exist.
-
-    Returns
-    -------
-    np.ndarray
-        Array of measured deltas.
-    """
-    dir0_path = os.path.join(shot_dir, "dir0.png")
-    dir1_path = os.path.join(shot_dir, "dir1.png")
-    trash0_path = os.path.join(shot_dir, "trash0.png")
-    trash1_path = os.path.join(shot_dir, "trash1.png")
-
-    # lines are mandatory
-    if os.path.exists(dir0_path):
-        dir0_img = load_image(dir0_path)
-    else:
-        raise ImageProcessingError(f"{dir0_path} does not exist")
-    if os.path.exists(dir1_path):
-        dir1_img = load_image(dir1_path)
-    else:
-        raise ImageProcessingError(f"{dir1_path} does not exist")
-
-    # exclusion zones are optional
-    if os.path.exists(trash0_path) and use_exclusion_if_available:
-        trash0_img = load_image(trash0_path)
-    else:
-        trash0_img = np.zeros_like(dir0_img)
-    if os.path.exists(trash1_path) and use_exclusion_if_available:
-        trash1_img = load_image(trash1_path)
-    else:
-        trash1_img = np.zeros_like(dir1_img)
-
-    deltas0 = get_px_deltas_from_lines(
-        lines_img_in=dir0_img,
-        exclusion_img_in=trash0_img,
-    )
-    deltas1 = get_px_deltas_from_lines(
-        lines_img_in=dir1_img,
-        exclusion_img_in=trash1_img,
-    )
-    deltas = np.hstack((deltas0, deltas1))
-
-    return deltas
 
 
 def load_image(img_path):
@@ -94,10 +34,10 @@ def load_image(img_path):
     -------
 
     """
-    return _binarize_array(color.rgb2gray(io.imread(img_path)))
+    return binarize_array(color.rgb2gray(io.imread(img_path)))
 
 
-def _binarize_array(arr_in):
+def binarize_array(arr_in):
     """
     Converts an input array to have integer values of 1 at max, and 0
     everywhere else.
@@ -114,7 +54,9 @@ def _binarize_array(arr_in):
     """
     arr_max = arr_in.max()
     if arr_max <= 0:
-        raise ImageProcessingError("cannot process image with max <= 0")
+        raise exceptions.ImageProcessingError(
+            "cannot process image with max <= 0"
+        )
 
     arr_out = (arr_in.copy() / arr_in.max()).astype(int)
     arr_out[arr_out < 1] = 0
@@ -151,7 +93,7 @@ def get_px_deltas_from_lines(
     lines_img = lines_img_in.copy()
 
     if exclusion_img_in.shape != lines_img.shape:
-        raise ImageProcessingError(
+        raise exceptions.ImageProcessingError(
             f"image shape mismatch: "
             f"{exclusion_img_in.shape} vs. {lines_img.shape}"
         )
@@ -163,7 +105,7 @@ def get_px_deltas_from_lines(
 
     deltas = []
     for i in range(lines_img.shape[0]):
-        deltas.extend(_get_diffs_from_row(lines_img[i]))
+        deltas.extend(get_diffs_from_row(lines_img[i]))
 
     deltas = np.array(deltas)
 
@@ -180,7 +122,7 @@ def get_px_deltas_from_lines(
     return deltas
 
 
-def _get_diffs_from_sub_row(sub_row):
+def get_diffs_from_sub_row(sub_row):
     """
     The actual diff-getter. If two measurements are in adjacent pixels, this
     method selects the rightmost adjacent location and throws out the others
@@ -213,7 +155,7 @@ def _get_diffs_from_sub_row(sub_row):
     return cell_boundary_index_diffs
 
 
-def _get_diffs_from_row(row):
+def get_diffs_from_row(row):
     """
     Get all pixel distances between cell boundaries for a single row in an image
 
@@ -234,6 +176,6 @@ def _get_diffs_from_row(row):
         # split into sub-arrays on NaN to enforce exclusion zones
         split_row = np.split(row, np.where(np.isnan(row))[0])
         for sub_row in split_row:
-            diffs.extend(_get_diffs_from_sub_row(sub_row))
+            diffs.extend(get_diffs_from_sub_row(sub_row))
 
     return np.array(diffs)
