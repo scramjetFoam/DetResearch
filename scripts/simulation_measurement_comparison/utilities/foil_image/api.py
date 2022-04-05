@@ -12,6 +12,29 @@ import numpy as np
 from . import calculation_functions, exceptions
 
 
+class Shot:
+    def __init__(
+        self,
+        date,
+        shot_no,
+    ):
+        """
+        A cleaner-than-a-tuple organizer for date/shot info
+
+        Parameters
+        ----------
+        date: str
+            Shot date
+        shot_no: int
+            Shot number
+        """
+        self.date = date
+        self.shot_no = shot_no
+
+    def __repr__(self):
+        return f"{self.date} Shot {self.shot_no:02d}"
+
+
 def collect_shot_deltas(
     shot_dir,
     use_exclusion_if_available=True,
