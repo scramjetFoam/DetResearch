@@ -3,8 +3,6 @@ API functions for new soot foil image processing module
 
 Anything important in here should be manually imported into __init__.py and
 included in __all__ in order to keep the user interface clean.
-
-todo: add tests
 """
 
 import os

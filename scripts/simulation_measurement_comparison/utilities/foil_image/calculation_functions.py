@@ -7,8 +7,6 @@ Modified tools from funcs
 
 If you're using this to calculate stuff, you probably want to just stick to
 the api. Why are you in here?
-
-todo: add tests
 """
 
 import numpy as np
@@ -52,10 +50,11 @@ def binarize_array(arr_in):
     np.ndarray
         Converted array (copy)
     """
-    arr_max = arr_in.max()
-    if arr_max <= 0:
+    arr_max = np.nanmax(arr_in)
+    # this can still be NaN if the input array is all NaN
+    if np.isnan(arr_max) or arr_max <= 0:
         raise exceptions.ImageProcessingError(
-            "cannot process image with max <= 0"
+            "cannot process image with max <= 0 or max == NaN"
         )
 
     arr_out = (arr_in.copy() / arr_in.max()).astype(int)
@@ -125,9 +124,10 @@ def get_px_deltas_from_lines(
 def get_diffs_from_sub_row(sub_row):
     """
     The actual diff-getter. If two measurements are in adjacent pixels, this
-    method selects the rightmost adjacent location and throws out the others
-    (i.e. it only accepts measurements where the boundary location is >1 px away
-    from the previous boundary location).
+    method selects the leftmost and rightmost adjacent locations and throws out
+    the others (i.e. it only accepts measurements where the boundary location
+    is >1 px away from the previous boundary location). The distance between
+    the leftmost and rightmost adjacent locations is not counted.
 
     Parameters
     ----------
@@ -145,7 +145,7 @@ def get_diffs_from_sub_row(sub_row):
     # find how far apart adjacent boundaries are
     cell_boundary_index_diffs = np.abs(
         cell_boundary_indices - np.roll(cell_boundary_indices, -1)
-    )
+    )[:-1]  # throw out last diff -- roll wraps the first location around!
 
     # throw out adjacent boundaries
     cell_boundary_index_diffs = (
