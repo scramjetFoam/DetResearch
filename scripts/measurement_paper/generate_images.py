@@ -406,6 +406,17 @@ def build_schlieren_images(
         )
         schlieren_raw = np.fliplr(store[key])
 
+    # jankily shoehorn spatial calibration into existing function
+    mm_per_px = df_meas[
+        (df_meas["date"] == date)
+        & (df_meas["shot"] == shot)
+        ]["spatial_centerline"].iloc[0]
+    schlieren_scalebar = get_scale_bar(
+        1,
+        mm_per_px,
+        cell_size=25.4,
+    )
+
     # trim image to ROI
     limits_x = sorted(limits_x)
     limits_y = sorted(limits_y)
@@ -432,6 +443,9 @@ def build_schlieren_images(
     ax.axis("off")
     # ax.set_title("Raw")
     ax.grid(False)
+    ax.add_artist(
+        copy(schlieren_scalebar),
+    )
     plt.tight_layout()
     if save:
         plt.savefig(
@@ -457,6 +471,10 @@ def build_schlieren_images(
             c=COLOR_SC,
             lw=0.5,
         )
+
+    ax.add_artist(
+        copy(schlieren_scalebar),
+    )
     plt.tight_layout()
     if save:
         plt.savefig(
