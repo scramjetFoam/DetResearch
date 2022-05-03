@@ -1,25 +1,14 @@
 import os
-import sys
-from copy import copy
-from functools import wraps
-from time import time
 
-import skimage.filters
-
-import funcs
 import numpy as np
 import pandas as pd
-import seaborn as sns
-import uncertainties as un
-from funcs.post_processing.images.soot_foil import deltas as pp_deltas
-from matplotlib import patches
 from matplotlib import pyplot as plt
-from matplotlib_scalebar.scalebar import ScaleBar
-from scipy.stats import ks_2samp, t, ttest_ind, ttest_ind_from_stats
-from skimage import io, transform
-from uncertainties import unumpy as unp
-import generate_images
 from scipy.stats import linregress
+from scipy.stats._stats_mstats_common import LinregressResult
+from skimage import io
+
+import generate_images
+from funcs.post_processing.images.soot_foil import deltas as pp_deltas
 
 
 def main():
@@ -43,12 +32,12 @@ def main():
     distance = np.array(distance)
 
     plt.figure()
-    regression_all = linregress(distance, deltas)
+    regression_all = linregress(distance, deltas)  # type: LinregressResult
     plt.plot(distance, deltas, label="deltas", marker=".", ls="", alpha=0.4)
     plt.plot(
         distance,
         regression_all.slope * distance + regression_all.intercept,
-        label=f"regression R^2={regression_all.rvalue ** 2}",
+        label=f"regression R^2={regression_all.rvalue ** 2:.2f}",
     )
     plt.ylabel("triple point delta (px)")
     plt.xlabel("foil position (px)")
@@ -58,7 +47,10 @@ def main():
     plt.figure()
     delta_series = pd.Series(index=distance, data=deltas)
     delta_series = delta_series.groupby(delta_series.index).median()
-    regression_median = linregress(delta_series.index, delta_series.values)
+    regression_median = linregress(
+        delta_series.index,
+        delta_series.values,
+    )  # type: LinregressResult
     plt.plot(
         delta_series.index,
         delta_series.values,
@@ -71,7 +63,7 @@ def main():
         delta_series.index,
         regression_median.slope * delta_series.index
         + regression_median.intercept,
-        label=f"regression R^2={regression_median.rvalue ** 2}",
+        label=f"regression R^2={regression_median.rvalue ** 2:.2f}",
     )
     plt.ylabel("triple point delta (px)")
     plt.xlabel("foil position (px)")
