@@ -8,6 +8,6 @@ something I wish I'd known enough to do earlier. This new version of the module
 isn't being retrofitted into the main funcs module yet because frankly I don't
 feel like it.
 """
-from .api import collect_shot_deltas
+from .api import collect_shot_deltas, Shot
 
-__all__ = ["collect_shot_deltas"]
+__all__ = ["collect_shot_deltas", "Shot"]
