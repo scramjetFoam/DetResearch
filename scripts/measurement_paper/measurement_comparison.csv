@@ -1,0 +1,17 @@
+Source,Initial Pressure (kPa),Equivalence Ratio,Percent N2,Cell Size (mm),notes
+This Study (Soot Foil),101,1.07,38.5,18.7,
+This Study (Schlieren),101,1.07,38.5,17.4,
+Akbar (1997),102,1.00,48.8,32.5,ja7d.txt
+Akbar (1997),102,1.00,58.8,51.75,ja7d.txt
+Akbar (1997),102,1.00,60.4,39,ja7d.txt
+Akbar (1997),102,1.00,63.1,60.5,ja7d.txt
+Akbar (1997),102,1.00,65.1,50,ja7d.txt
+Akbar (1997),92-97,1.00,54.5,42,ja7c.txt
+Akbar (1997),92-97,1.00,58.3,59.8,ja7c.txt
+Akbar (1997),77-87,1.00,37.5,16.8,ja7b.txt
+Akbar (1997),77-87,1.00,44.4,32.8,ja7b.txt
+Akbar (1997),77-87,1.00,50,33.3,ja7b.txt
+Akbar (1997),57-72,1.00,0,5.8,ja7a.txt
+Akbar (1997),57-72,1.00,16.7,11,ja7a.txt
+Akbar (1997),57-72,1.00,28.6,14.5,ja7a.txt
+Akbar (1997),57-72,1.00,50,40,ja7a.txt
