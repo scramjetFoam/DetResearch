@@ -32,7 +32,26 @@ class Shot:
         self.shot_no = shot_no
 
     def __repr__(self):
-        return f"{self.date} Shot {self.shot_no:02d}"
+        return f"{self.date} {self.shot_string}"
+
+    @property
+    def shot_string(self):
+        return f"Shot {self.shot_no:02d}"
+
+    @shot_string.setter
+    def shot_string(self, _):
+        raise AttributeError("shot_string cannot be set")
+
+    @property
+    def dir_name(self):
+        return os.path.join(self.date, self.shot_string)
+
+    @dir_name.setter
+    def dir_name(self, _):
+        raise AttributeError("dir_name cannot be set")
+
+    def __len__(self):
+        return len(str(self))
 
 
 def collect_shot_deltas(
