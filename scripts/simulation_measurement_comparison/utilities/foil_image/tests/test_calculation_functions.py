@@ -99,7 +99,31 @@ class TestGetPxDeltasFromLines(TestCase):
                 exclusion_img_in=exclusion_img_in,
             )
 
-    def test_good_value(self):
+    def test_good_value_masked(self):
+        """
+        get_px_deltas_from_lines works properly
+        """
+        lines_img_in = np.array([
+            [1, 0, 1, 0, 0, 1, 0, 1],
+            [1, 0, 1, 0, 0, 1, 0, 1],
+            [1, 0, 1, 0, 0, 1, 0, 1],
+        ])
+        exclusion_img_in = np.array([
+            [0, 0, 0, 0, 0, 0, 0, 0],
+            [0, 1, 0, 0, 0, 0, 0, 1],  # NaNs out both 0 and 1
+            [0, 1, 1, 1, 1, 0, 0, 0],  # NaNs out both 0 and 1
+        ])
+        good = np.array([2, 3, 2, 3, 2])  # second row only has the 3 px gap
+
+        test = cf.get_px_deltas_from_lines(
+            lines_img_in=lines_img_in,
+            exclusion_img_in=exclusion_img_in,
+            apply_uncertainty=False,
+        )
+
+        np.testing.assert_array_equal(test, good)
+
+    def test_good_value_unmasked(self):
         """
         get_px_deltas_from_lines works properly
         """
@@ -109,9 +133,9 @@ class TestGetPxDeltasFromLines(TestCase):
         ])
         exclusion_img_in = np.array([
             [0, 0, 0, 0, 0, 0, 0, 0],
-            [0, 1, 0, 0, 0, 0, 0, 1],  # NaNs out both 0 and 1
+            [0, 0, 0, 0, 0, 0, 0, 0],
         ])
-        good = np.array([2, 3, 2, 3])  # second row only has the 3 px gap
+        good = np.array([2, 3, 2, 2, 3, 2])
 
         test = cf.get_px_deltas_from_lines(
             lines_img_in=lines_img_in,

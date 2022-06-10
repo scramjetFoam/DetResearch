@@ -104,7 +104,13 @@ def get_px_deltas_from_lines(
 
     deltas = []
     for i in range(lines_img.shape[0]):
-        deltas.extend(get_diffs_from_row(lines_img[i]))
+        diffs = get_diffs_from_row(lines_img[i])
+        deltas.extend(diffs)
+        if i == 2:
+            print(lines_img[i])
+            print(exclusion_img[i])
+            print(diffs)
+            print(deltas)
 
     deltas = np.array(deltas)
 
