@@ -4,12 +4,15 @@ from skimage import io, color
 from uncertainties import unumpy as unp
 
 from ....uncertainty import add_uncertainty_terms, u_cell
+from ._rust import fast_get_px_deltas_from_lines as _fast_get_deltas
 
 u_cell = u_cell["soot_foil"]
 
 
 def get_px_deltas_from_lines(
         img_path,
+        use_fast=True,
+        mask_path=None,
         apply_uncertainty=True
 ):
     """
@@ -22,6 +25,11 @@ def get_px_deltas_from_lines(
     ----------
     img_path : str
         path of the image containing traced triple point lines
+    use_fast : bool
+        If true, the faster compiled rust version of the processing script will be run
+    mask_path : Optional[str]
+        Path to the damage mask image, which must have the same dimensions as the main image. Only works if
+        `use_fast=True`
     apply_uncertainty : bool
         True returns array of nominal values with uncertainties; False returns
         only nominal values
@@ -31,14 +39,16 @@ def get_px_deltas_from_lines(
     deltas : np.array or unp.uarray
         triple point distances, in pixels.
     """
-    img = color.rgb2gray(io.imread(img_path))
-    img_max = img.max()
-    deltas = []
-    for i in range(img.shape[0]):
-        # todo: add row-based uncertainty
-        deltas.extend(_get_measurement_from_row(img[i], img_max))
+    if use_fast:
+        deltas = _fast_get_deltas(img_path, mask_path)
+    else:
+        img = color.rgb2gray(io.imread(img_path))
+        img_max = img.max()
+        deltas = []
+        for i in range(img.shape[0]):
+            deltas.extend(_get_measurement_from_row(img[i], img_max))
 
-    deltas = np.array(deltas)
+        deltas = np.array(deltas)
 
     if apply_uncertainty:
         uncert = add_uncertainty_terms([
