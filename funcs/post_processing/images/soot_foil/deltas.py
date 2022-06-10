@@ -5,7 +5,7 @@ from skimage import io, color
 from uncertainties import unumpy as unp
 
 from ....uncertainty import add_uncertainty_terms, u_cell
-from ._rust import fast_get_px_deltas_from_lines as _fast_get_deltas
+from ._rust import _fast_get_deltas
 
 u_cell = u_cell["soot_foil"]
 
