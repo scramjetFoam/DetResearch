@@ -2,10 +2,7 @@ from unittest import TestCase
 
 import numpy as np
 
-from scripts.simulation_measurement_comparison.utilities.foil_image import (
-    calculation_functions as cf,
-    exceptions as ex,
-)
+from funcs.post_processing.images.soot_foil import deltas
 
 
 class TestBinarizeArray(TestCase):
@@ -14,18 +11,18 @@ class TestBinarizeArray(TestCase):
         binarize_array raises an error on bad values
         """
         with self.subTest("zero"):
-            with self.assertRaises(ex.ImageProcessingError):
-                cf.binarize_array(np.array([0]))
+            with self.assertRaises(ValueError):
+                deltas._binarize_array(np.array([0]))
 
         with self.subTest("negative"):
-            with self.assertRaises(ex.ImageProcessingError):
-                cf.binarize_array(np.array([0]))
+            with self.assertRaises(ValueError):
+                deltas._binarize_array(np.array([0]))
 
         with self.subTest("NaN"):
-            with self.assertRaises(ex.ImageProcessingError):
+            with self.assertRaises(ValueError):
                 with self.assertWarns(RuntimeWarning):
                     # numpy throws a runtime warning for all-NaN slice
-                    cf.binarize_array(np.array([np.NaN]))
+                    deltas._binarize_array(np.array([np.NaN]))
 
     def test_good_value(self):
         """
@@ -34,7 +31,7 @@ class TestBinarizeArray(TestCase):
         arr_in = np.array([0.5, 0.5, 0.0, 0.1])
         good = np.array([1, 1, 0, 0], dtype="int")
 
-        test = cf.binarize_array(arr_in)
+        test = deltas._binarize_array(arr_in)
 
         with self.subTest("values"):
             np.testing.assert_allclose(test, good)
@@ -51,7 +48,7 @@ class TestGetDiffsFromSubRow(TestCase):
         sub_row = np.array([np.NaN, 1, 0, 0, 1, 0, 1, 1, 1, 0, 1])
         good = np.array([3, 2, 2])
 
-        test = cf.get_diffs_from_sub_row(sub_row)
+        test = deltas._get_diffs_from_sub_row(sub_row)
 
         np.testing.assert_array_equal(test, good)
 
@@ -61,7 +58,7 @@ class TestGetDiffsFromRow(TestCase):
         """
         get_diffs_from_row handles all-NaN input
         """
-        test = cf.get_diffs_from_row(np.array([np.NaN]))
+        test = deltas._get_diffs_from_row(np.array([np.NaN]))
 
         np.testing.assert_array_equal(test, np.array([]))
 
@@ -69,7 +66,7 @@ class TestGetDiffsFromRow(TestCase):
         """
         get_diffs_from_row handles all-zero input
         """
-        test = cf.get_diffs_from_row(np.array([0]))
+        test = deltas._get_diffs_from_row(np.array([0]))
 
         np.testing.assert_array_equal(test, np.array([]))
 
@@ -80,67 +77,65 @@ class TestGetDiffsFromRow(TestCase):
         row = np.array([1, 0, 0, 1, np.NaN, 1, 0, 1, np.NaN, np.NaN, 1, np.NaN])
         good = np.array([3, 2])
 
-        test = cf.get_diffs_from_row(row)
+        test = deltas._get_diffs_from_row(row)
 
         np.testing.assert_array_equal(test, good)
 
 
-class TestGetPxDeltasFromLines(TestCase):
+class TestSlowGetDeltas(TestCase):
     def test_shape_mismatch(self):
         """
-        get_px_deltas_from_lines raises an error when image shapes don't match
+        _slow_get_deltas raises an error when image shapes don't match
         """
-        lines_img_in = np.array([1, 0])
-        exclusion_img_in = np.array([1, 0, 1])
+        img = np.array([1, 0])
+        mask = np.array([1, 0, 1])
 
-        with self.assertRaises(ex.ImageProcessingError):
-            cf.get_px_deltas_from_lines(
-                lines_img_in=lines_img_in,
-                exclusion_img_in=exclusion_img_in,
+        with self.assertRaises(ValueError):
+            deltas._slow_get_deltas(
+                img=img,
+                mask=mask,
             )
 
     def test_good_value_masked(self):
         """
-        get_px_deltas_from_lines works properly
+        _slow_get_deltas works properly
         """
-        lines_img_in = np.array([
+        img = np.array([
             [1, 0, 1, 0, 0, 1, 0, 1],
             [1, 0, 1, 0, 0, 1, 0, 1],
             [1, 0, 1, 0, 0, 1, 0, 1],
         ])
-        exclusion_img_in = np.array([
+        mask = np.array([
             [0, 0, 0, 0, 0, 0, 0, 0],
             [0, 1, 0, 0, 0, 0, 0, 1],  # NaNs out both 0 and 1
             [0, 1, 1, 1, 1, 0, 0, 0],  # NaNs out both 0 and 1
         ])
         good = np.array([2, 3, 2, 3, 2])  # second row only has the 3 px gap
 
-        test = cf.get_px_deltas_from_lines(
-            lines_img_in=lines_img_in,
-            exclusion_img_in=exclusion_img_in,
-            apply_uncertainty=False,
+        test = deltas._slow_get_deltas(
+            img=img,
+            mask=mask,
         )
 
         np.testing.assert_array_equal(test, good)
 
     def test_good_value_unmasked(self):
         """
-        get_px_deltas_from_lines works properly
+        _slow_get_deltas works properly
         """
-        lines_img_in = np.array([
+        img = np.array([
             [1, 0, 1, 0, 0, 1, 0, 1],
             [1, 0, 1, 0, 0, 1, 0, 1],
         ])
-        exclusion_img_in = np.array([
+        mask = np.array([
             [0, 0, 0, 0, 0, 0, 0, 0],
             [0, 0, 0, 0, 0, 0, 0, 0],
         ])
         good = np.array([2, 3, 2, 2, 3, 2])
 
-        test = cf.get_px_deltas_from_lines(
-            lines_img_in=lines_img_in,
-            exclusion_img_in=exclusion_img_in,
-            apply_uncertainty=False,
+        test = deltas._slow_get_deltas(
+            img=img,
+            mask=mask,
         )
 
         np.testing.assert_array_equal(test, good)
