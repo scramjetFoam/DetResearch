@@ -15,6 +15,7 @@ class Shot:
         self,
         date,
         shot_no,
+        base_dir,
     ):
         """
         A cleaner-than-a-tuple organizer for date/shot info
@@ -25,9 +26,12 @@ class Shot:
             Shot date
         shot_no: int
             Shot number
+        base_dir: str
+            Base data directory for locating shot directory on disk
         """
         self.date = date
         self.shot_no = shot_no
+        self._base_dir = base_dir
 
     def __repr__(self):
         return f"{self.date} {self.shot_string}"
@@ -47,6 +51,18 @@ class Shot:
     @dir_name.setter
     def dir_name(self, _):
         raise AttributeError("dir_name cannot be set")
+
+    @property
+    def directory(self):
+        shot_dir = os.path.join(self._base_dir, self.dir_name)
+        if not os.path.exists(shot_dir):
+            raise NotADirectoryError(f"{shot_dir} does not exist")
+
+        return shot_dir
+
+    @directory.setter
+    def directory(self, _):
+        raise AttributeError("dir cannot be set")
 
     def __len__(self):
         return len(str(self))
