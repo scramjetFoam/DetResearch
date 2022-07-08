@@ -100,6 +100,8 @@ def get_px_deltas_from_lines(
             deltas,
             uncert
         )
+    else:
+        deltas = np.array(deltas)
 
     return deltas
 
