@@ -38,9 +38,11 @@ def read_all_shots() -> List[Shot]:
         for line in f.readlines():
             date: str
             shot_no: str
-            date, shot_no = line.strip().split(",")
-            shot_no: int = int(shot_no)
-            all_shots.append(Shot(date=date, shot_no=shot_no, base_dir=IMAGES_BASE_DIR))
+            possible_info = line.strip().split(",")
+            if len(possible_info) == 2:
+                date, shot_no = possible_info
+                shot_no: int = int(shot_no)
+                all_shots.append(Shot(date=date, shot_no=shot_no, base_dir=IMAGES_BASE_DIR))
 
     return all_shots
 
@@ -165,5 +167,5 @@ def main(output_location: str):
 
 if __name__ == "__main__":
     # todo: get simulation results and add those in as well
-    final_data_loc = os.path.join(os.path.dirname(__file__), "results.h5")
+    final_data_loc = os.path.join(os.path.dirname(__file__), "measurements.h5")
     main(final_data_loc)
