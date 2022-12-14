@@ -15,7 +15,6 @@ def check_stored_base_cj_speed(
         equivalence,
         diluent,
         diluent_mol_frac,
-        inert,
 ):
     current_data = table.fetch_test_rows(
             mechanism=mechanism,
@@ -26,7 +25,6 @@ def check_stored_base_cj_speed(
             equivalence=equivalence,
             diluent=diluent,
             diluent_mol_frac=diluent_mol_frac,
-            inert=inert
     )
     return len(current_data['cj_speed']) == 1
 
@@ -41,7 +39,6 @@ def check_stored_base_calcs(
         equivalence,
         diluent,
         diluent_mol_frac,
-        inert,
 ):
     current_data = table.fetch_test_rows(
             mechanism=mechanism,
@@ -52,7 +49,6 @@ def check_stored_base_calcs(
             equivalence=equivalence,
             diluent=diluent,
             diluent_mol_frac=diluent_mol_frac,
-            inert=inert
     )
     return all([
         current_data['ind_len_west'][0] > 0,
@@ -73,7 +69,6 @@ def perform_study(
         oxidizer,
         diluent,
         diluent_mol_frac,
-        inert,
         perturbation_fraction,
         perturbed_reaction_no,
         db_name,
@@ -90,7 +85,6 @@ def perform_study(
         oxidizer,
         diluent,
         diluent_mol_frac,
-        inert,
     )
     table_name = 'data'
     current_table = db.Table(
@@ -111,7 +105,6 @@ def perform_study(
             equivalence=equivalence,
             diluent=diluent,
             diluent_mol_frac=diluent_mol_frac,
-            inert=inert
         )
         if not stored_cj:
             # calculate and store cj speed
@@ -130,7 +123,7 @@ def perform_study(
                 equivalence=equivalence,
                 diluent=diluent,
                 diluent_mol_frac=diluent_mol_frac,
-                inert=inert,
+                inert=None,
                 cj_speed=cj_speed,
                 ind_len_west=0,
                 ind_len_gav=0,
@@ -151,7 +144,6 @@ def perform_study(
                 equivalence=equivalence,
                 diluent=diluent,
                 diluent_mol_frac=diluent_mol_frac,
-                inert=inert
             )
             [rxn_table_id] = current_data['rxn_table_id']
             [cj_speed] = current_data['cj_speed']
@@ -177,7 +169,6 @@ def perform_study(
             equivalence=equivalence,
             diluent=diluent,
             diluent_mol_frac=diluent_mol_frac,
-            inert=inert
         )
         if not stored_base_calcs:
             # calculate base cell size
@@ -191,7 +182,6 @@ def perform_study(
                 equivalence=equivalence,
                 diluent=diluent,
                 diluent_mol_frac=diluent_mol_frac,
-                inert=inert,
                 max_step_znd=max_step_znd,
             )
             base_ind_len = cs.induction_length
@@ -204,7 +194,7 @@ def perform_study(
                 equivalence=equivalence,
                 diluent=diluent,
                 diluent_mol_frac=diluent_mol_frac,
-                inert=inert,
+                inert=None,
                 cj_speed=cj_speed,
                 ind_len_west=base_ind_len['Westbrook'],
                 ind_len_gav=base_ind_len['Gavrikov'],
@@ -225,7 +215,6 @@ def perform_study(
                 equivalence=equivalence,
                 diluent=diluent,
                 diluent_mol_frac=diluent_mol_frac,
-                inert=inert
             )
             base_ind_len = {
                 'Westbrook': current_data['ind_len_west'][0],
@@ -251,7 +240,6 @@ def perform_study(
         equivalence=equivalence,
         diluent=diluent,
         diluent_mol_frac=diluent_mol_frac,
-        inert=inert,
         perturbed_reaction=perturbed_reaction_no,
         max_step_znd=max_step_znd,
     )

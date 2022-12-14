@@ -87,7 +87,6 @@ class TestAgainstDemo:
         c.initial_press = self.init_press
         c.fuel = 'H2'
         c.oxidizer = 'O2'
-        c.inert = None
         c.equivalence = 1
         c.diluent = None
         c.diluent_mol_frac = 0.5
@@ -113,7 +112,6 @@ class TestAgainstDemo:
         c.initial_press = self.init_press
         c.fuel = 'H2'
         c.oxidizer = 'O2'
-        c.inert = None
         c.equivalence = 1
         c.diluent = 'AR'
         c.diluent_mol_frac = 0.1
@@ -170,32 +168,6 @@ class TestAgainstDemo:
         correct_multipliers[pert] = 1 + pert_frac
         multipliers = [c.base_gas.multiplier(i) for i in range(n_rxns)]
         assert np.allclose(multipliers, correct_multipliers)
-
-    def test_perturbed_inert(self):
-        c = cs.CellSize()
-        pert = 3
-        pert_frac = 0.01
-        inert = 'AR'
-        c(
-            base_mechanism='Mevel2017.cti',
-            initial_temp=300,
-            initial_press=101325,
-            fuel='H2',
-            oxidizer='O2',
-            equivalence=1,
-            diluent='AR',
-            diluent_mol_frac=0.02,
-            cj_speed=2834.9809153464994,
-            perturbed_reaction=pert,
-            perturbation_fraction=pert_frac,
-            inert=inert
-        )
-        gas = ct.Solution(self.mechanism)
-        rxns = [rxn for rxn in gas.reactions() if
-                inert not in rxn.reactants or inert not in rxn.products]
-        checks = [c.base_gas.n_reactions == len(rxns)]
-        checks += [rxn0 == rxn1 for rxn0, rxn1 in
-                   zip(rxns, c.base_gas.reactions())]
 
 
 if __name__ == '__main__':  # pragma: no cover

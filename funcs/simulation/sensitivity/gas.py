@@ -10,7 +10,6 @@ def build(
         oxidizer,
         diluent=None,
         diluent_mol_frac=0,
-        inert=None,
 ):
     """
     Build a gas object for simulations
@@ -20,10 +19,7 @@ def build(
     -------
     ct.Solution
     """
-    if inert is not None:
-        gas = thermo.solution_with_inerts(mech, inert)
-    else:
-        gas = thermo.ct.Solution(mech)
+    gas = thermo.ct.Solution(mech)
     gas.TP = init_temp, init_press
     gas.set_equivalence_ratio(
         equivalence,

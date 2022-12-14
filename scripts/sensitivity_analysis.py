@@ -12,11 +12,8 @@ from funcs.simulation.thermo import match_adiabatic_temp
 if __name__ == '__main__':
     import warnings
     warnings.simplefilter('ignore')
-    # inert = 'AR'
-    _inert = None
     # _mechanism = 'Mevel2017.cti'
     # _mechanism = 'aramco2.cti'
-    _inert_species = [_inert]
     _mechanism = "gri30_highT.cti"
     _initial_temp = 300
     _initial_press = 101325
@@ -59,17 +56,9 @@ if __name__ == '__main__':
         equivalence=_equivalence,
         diluent=_diluent,
         diluent_mol_frac=_diluent_mol_frac,
-        inert=_inert
     )['rxn_table_id']
 
-    reactions = []
-    # noinspection PyCallByClass,PyArgumentList
-    for rxn in ct.Reaction.listFromFile(_mechanism):
-        if not any([
-            s in list(rxn.reactants) + list(rxn.products)
-            for s in _inert_species
-        ]):
-            reactions.append(rxn)
+    reactions = ct.Reaction.listFromFile(_mechanism)
 
     # PARALLEL -- remove _lock to args in cell_size.CellSize
     # mp.set_start_method("spawn")
@@ -89,7 +78,6 @@ if __name__ == '__main__':
                         _oxidizer,
                         _diluent,
                         _diluent_mol_frac,
-                        _inert,
                         _perturbation_fraction,
                         i,
                         db_name,
@@ -114,7 +102,6 @@ if __name__ == '__main__':
     #         _oxidizer,
     #         _diluent,
     #         _diluent_mol_frac,
-    #         _inert,
     #         _perturbation_fraction,
     #         i,
     #         _lock

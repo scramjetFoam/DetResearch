@@ -263,47 +263,6 @@ def match_adiabatic_temp(
     return best.x[0]
 
 
-def _enforce_species_list(species):
-    if isinstance(species, str):
-        species = [species.upper()]
-    elif hasattr(species, '__iter__') and \
-            all([isinstance(s, str) for s in species]):
-        species = [s.upper() for s in species]
-    else:
-        if hasattr(species, '__iter__'):
-            bad_type = [
-                type(item) for item in species if not isinstance(item, str)
-            ]
-        else:
-            bad_type = type(species)
-
-        raise TypeError('Bad species type: %s' % bad_type)
-
-    return species
-
-
-def solution_with_inerts(
-        mech,
-        inert_species
-):
-    inert_species = _enforce_species_list(inert_species)
-    species = ct.Species.listFromFile(mech)
-    reactions = []
-    for rxn in ct.Reaction.listFromFile(mech):
-        if not any([
-            s in list(rxn.reactants) + list(rxn.products)
-            for s in inert_species
-        ]):
-            reactions.append(rxn)
-
-    return ORIGINAL_SOLUTION(
-        thermo='IdealGas',
-        species=species,
-        reactions=reactions,
-        kinetics='GasKinetics'
-    )
-
-
 def get_f_a_st(
         fuel="C3H8",
         oxidizer="O2:1 N2:3.76",

@@ -15,8 +15,7 @@ http://shepherd.caltech.edu/EDL/PublicResources/sdt/
 import cantera as ct
 import numpy as np
 
-from .thermo import diluted_species_dict, ORIGINAL_SOLUTION, \
-    solution_with_inerts
+from .thermo import diluted_species_dict, ORIGINAL_SOLUTION
 
 
 def wrapped_cvsolve(
@@ -157,9 +156,6 @@ class CellSize:
         Mole fraction of diluent
     cj_speed : float
         Chapman-Jouguet wave speed of the mixture specified above
-    inert : str or None
-        Specie to deactivate (must be deactivated in CJ speed calculation as
-        well). Defaults to None
     perturbed_reaction : int
         Reaction number to perturb. Defaults to -1, meaning that no reaction is
         perturbed
@@ -179,7 +175,6 @@ class CellSize:
             diluent,
             diluent_mol_frac,
             cj_speed,
-            inert=None,
             perturbed_reaction=-1,
             perturbation_fraction=1e-2,
             max_tries_znd=10,
@@ -202,7 +197,6 @@ class CellSize:
         self.equivalence = equivalence
         self.diluent = diluent
         self.diluent_mol_frac = diluent_mol_frac
-        self.inert = inert
         self.T1 = initial_temp
         self.perturbed_reaction = perturbed_reaction
         self.perturbation_fraction = perturbation_fraction
@@ -211,13 +205,7 @@ class CellSize:
             # alter ct.Solution within sdtoolbox so that it returns perturbed
             # reaction results
             def my_solution(mech):
-                if inert is None:
-                    original_gas = ORIGINAL_SOLUTION(mech)
-                else:
-                    original_gas = solution_with_inerts(
-                        mech,
-                        inert
-                    )
+                original_gas = ORIGINAL_SOLUTION(mech)
                 original_gas.set_multiplier(
                     1 + perturbation_fraction,
                     perturbed_reaction
@@ -403,11 +391,7 @@ class CellSize:
         return self.cell_size
 
     def _build_gas_object(self):
-        if self.inert is None:
-            gas = ct.Solution(self.mechanism)
-        else:
-            # this will change self.mechanism to the new one with inerts
-            gas = solution_with_inerts(self.mechanism, self.inert)
+        gas = ct.Solution(self.mechanism)
 
         gas.set_equivalence_ratio(
             self.equivalence,
