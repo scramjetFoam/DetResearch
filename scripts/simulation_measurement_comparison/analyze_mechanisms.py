@@ -69,7 +69,19 @@ class Mechanism(Enum):
 
     @classmethod
     def all(cls) -> List[Mechanism]:
-        return [item for _, item in cls.__members__.items()]
+        gri = []
+        non_gri = []
+        for _, mech in cls.__members__.items():
+            if "gri3" in mech.value:
+                gri.append(mech)
+            else:
+                non_gri.append(mech)
+
+        def by_value(m):
+            return m.value
+
+        # run the GRI mechs first, then do the rest alphabetically
+        return sorted(gri, key=by_value, reverse=True) + sorted(non_gri, key=by_value, reverse=True)
 
     @classmethod
     def min_itemsize(cls):
@@ -218,7 +230,8 @@ def calculate_all_new(getter_func: Callable, diluent_mol_fracs: Tuple[float, ...
         diluent_mol_fracs,
         (force_calc,)
     ))
-    with Pool(initializer=init, initargs=(lock,)) as pool:
+    # cut down number of processes to conserve RAM
+    with Pool(initializer=init, initargs=(lock,), processes=8) as pool:
         # noinspection PyUnresolvedReferences
         for _ in tqdm.tqdm(pool.istarmap(getter_func, arg_combinations), total=len(arg_combinations)):
             pass
@@ -429,7 +442,7 @@ if __name__ == "__main__":
     # Mechanism.validate_all_cantera_mechanisms()
     # print(get_cj_speed(Mechanism.GRI3HighT, Diluent.NONE, 0.0))
     # calculate_all_new(get_cj_speeds, (0.1, 0.2), False)
-    calculate_all_new(get_cell_sizes, (0.1, 0.2), False)
+    calculate_all_new(get_cell_sizes, (0.1,), False)
     with pd.HDFStore(DATA_FILE, "r") as store:
         df = store["data"]
     pd.set_option("display.max_columns", None)
