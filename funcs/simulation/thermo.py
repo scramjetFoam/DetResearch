@@ -179,9 +179,9 @@ def match_adiabatic_temp(
         fuel,
         oxidizer,
         phi,
-        dil_active,
-        dil_active_mol_frac,
-        dil_inert,
+        dil_original,
+        dil_original_mol_frac,
+        dil_new,
         init_temp,
         init_press,
         tol=1e-6
@@ -196,8 +196,8 @@ def match_adiabatic_temp(
 
     diluted_species_dict(
         gas.mole_fraction_dict(),
-        dil_inert,
-        inert_mol_frac
+        dil_new,
+        new_mol_frac,
     )
 
     The **additional** mole fraction is returned because, in this application,
@@ -214,13 +214,13 @@ def match_adiabatic_temp(
         Oxidizer to use; must be in `mech`
     phi : float
         Equivalence ratio of undiluted mixture
-    dil_active : str
-        Active diluent, which gives the target adiabatic flame temperature
+    dil_original : str
+        Original diluent, which gives the target adiabatic flame temperature
         to be matched; must be in `mech`
-    dil_active_mol_frac : float
-        Mole fraction of active diluent to apply to the undiluted mixture
-    dil_inert : str
-        Inert diluent to match to the active diluent; must be in `mech`
+    dil_original_mol_frac : float
+        Mole fraction of original diluent to apply to the undiluted mixture
+    dil_new : str
+        New diluent to match to the original diluent; must be in `mech`
     init_temp : float
         Mixture initial temperature in Kelvin
     init_press : float
@@ -239,21 +239,21 @@ def match_adiabatic_temp(
         fuel,
         oxidizer,
         phi,
-        dil_active,
-        dil_active_mol_frac,
+        dil_original,
+        dil_original_mol_frac,
         init_temp,
         init_press
     )
     best = minimize(
         temp_error,
-        np.array([dil_active_mol_frac]),
+        np.array([dil_original_mol_frac]),
         args=(
             target_temp,
             mech,
             fuel,
             oxidizer,
             phi,
-            dil_inert,
+            dil_new,
             init_temp,
             init_press
         ),

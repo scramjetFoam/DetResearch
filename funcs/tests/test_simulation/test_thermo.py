@@ -165,42 +165,42 @@ def test_match_adiabatic_temp():
     mech = "gri30.cti"
     fuel = "H2"
     oxidizer = "O2"
-    dil_active = "CO2"
-    dil_inert = "AR"
+    dil_original = "CO2"
+    dil_new = "AR"
     phi = 1
-    dil_mf_active = 0.1
+    dil_mf_original = 0.1
     t_0 = 300
     p_0 = 101325
-    dil_mf_inert = thermo.match_adiabatic_temp(
+    dil_mf_new = thermo.match_adiabatic_temp(
         mech,
         fuel,
         oxidizer,
         phi,
-        dil_active,
-        dil_mf_active,
-        dil_inert,
+        dil_original,
+        dil_mf_original,
+        dil_new,
         t_0,
         p_0,
     )
-    t_ad_active = thermo.get_adiabatic_temp(
+    t_ad_original = thermo.get_adiabatic_temp(
         mech,
         fuel,
         oxidizer,
         phi,
-        dil_active,
-        dil_mf_active,
+        dil_original,
+        dil_mf_original,
         t_0,
         p_0
     )
-    t_ad_inert = thermo.get_adiabatic_temp(
+    t_ad_new = thermo.get_adiabatic_temp(
         mech,
         fuel,
         oxidizer,
         phi,
-        dil_inert,
-        dil_mf_inert,
+        dil_new,
+        dil_mf_new,
         t_0,
         p_0
     )
-    assert np.isclose(t_ad_active, t_ad_inert)
+    assert np.isclose(t_ad_original, t_ad_new)
 

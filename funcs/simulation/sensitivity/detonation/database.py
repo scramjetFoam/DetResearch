@@ -71,7 +71,6 @@ class Table:
         'equivalence',
         'diluent',
         'diluent_mol_frac',
-        'inert',
         'cj_speed',
         'ind_len_west',
         'ind_len_gav',
@@ -192,7 +191,6 @@ class Table:
             equivalence=None,
             diluent=None,
             diluent_mol_frac=None,
-            inert=None
     ):
         """
         Checks the current table for a specific row of data
@@ -327,7 +325,6 @@ class Table:
                     equivalence REAL,
                     diluent TEXT,
                     diluent_mol_frac REAL,
-                    inert TEXT,
                     cj_speed REAL,
                     ind_len_west REAL,
                     ind_len_gav REAL,
@@ -549,7 +546,6 @@ class Table:
             equivalence,
             diluent,
             diluent_mol_frac,
-            inert,
             cj_speed,
             ind_len_west,
             ind_len_gav,
@@ -586,9 +582,6 @@ class Table:
             Diluent used in the current row
         diluent_mol_frac : float
             Mole fraction of diluent used in the current row
-        inert : str or None
-            Specie to make inert by removing every reaction where it is a
-            reactant or product
         overwrite_existing : bool
             True to overwrite an existing entry if it exists, False to
             protect existing entries
@@ -623,7 +616,6 @@ class Table:
                 oxidizer=oxidizer,
                 diluent=diluent,
                 diluent_mol_frac=diluent_mol_frac,
-                inert=inert
         ):
             # a row with the current information was found
             if overwrite_existing:
@@ -636,7 +628,6 @@ class Table:
                     oxidizer=oxidizer,
                     diluent=diluent,
                     diluent_mol_frac=diluent_mol_frac,
-                    inert=inert
                 )['rxn_table_id']
                 self._update_test_row(
                     rxn_table_id=rxn_table_id,
@@ -673,7 +664,6 @@ class Table:
                         :equivalence,
                         :diluent,
                         :diluent_mol_frac,
-                        :inert,
                         :cj_speed,
                         :ind_len_west,
                         :ind_len_gav,
@@ -693,7 +683,6 @@ class Table:
                         'equivalence': equivalence,
                         'diluent': diluent,
                         'diluent_mol_frac': diluent_mol_frac,
-                        'inert': inert,
                         'cj_speed': cj_speed,
                         'ind_len_west': ind_len_west,
                         'ind_len_gav': ind_len_gav,
@@ -983,7 +972,6 @@ class Table:
             equivalence=None,
             diluent=None,
             diluent_mol_frac=None,
-            inert=None
     ):
         """
         Fetches all rows from the current database with the desired inputs.
@@ -1007,9 +995,6 @@ class Table:
             Diluent to search for
         diluent_mol_frac : float
             Mole fraction of diluent to search for
-        inert : str or None
-            Specie to make inert by removing every reaction where it is a
-            reactant or product
 
         Returns
         -------
@@ -1028,7 +1013,6 @@ class Table:
                 'oxidizer': oxidizer,
                 'diluent': diluent,
                 'diluent_mol_frac': diluent_mol_frac,
-                'inert': inert
             })
             cur.execute(
                 cmd_str.format(self.table_name),
@@ -1041,7 +1025,6 @@ class Table:
                     'oxidizer': oxidizer,
                     'diluent': diluent,
                     'diluent_mol_frac': diluent_mol_frac,
-                    'inert': inert
                 }
             )
             info = cur.fetchall()
@@ -1144,4 +1127,4 @@ class Table:
 
 if __name__ == '__main__':  # pragma: no cover
     import subprocess
-    subprocess.check_call('pytest -vv tests/test_database.py')
+    subprocess.check_call('pytest -vv funcs/tests/test_simulation/test_database.py')
