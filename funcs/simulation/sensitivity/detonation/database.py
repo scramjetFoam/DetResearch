@@ -9,25 +9,15 @@ CREATED BY:
     CIRE and Propulsion Lab
     cartemic@oregonstate.edu
 """
-import inspect
 import sqlite3
 import warnings
+from functools import lru_cache
 from typing import Any, Dict, List, Optional
 
 import cantera as ct
 
 
-def _formatwarnmsg_impl(msg):  # pragma: no cover
-    # happier warning format :)
-    s = "%s: %s\n" % (msg.category.__name__, msg.message)
-    return s
-
-
-warnings._formatwarnmsg_impl = _formatwarnmsg_impl
-warnings.simplefilter("always")
-
-
-class DataBase:
+class DataBase:  # todo: implement these changes throughout the code base
     """
     A class for database-level operations
     """
@@ -58,18 +48,9 @@ class DataBase:
         equivalence,
         diluent,
         diluent_mol_frac,
-        cj_speed,
-        ind_len_west,
-        ind_len_gav,
-        ind_len_ng,
-        cell_size_west,
-        cell_size_gav,
-        cell_size_ng,
     ):
         if not self.base_rxn_table.has_mechanism(mechanism=mechanism):
-            self.base_rxn_table.store_all_reactions(
-                gas=ct.Solution(mechanism), mechanism=mechanism
-            )
+            self.base_rxn_table.store_all_reactions(gas=ct.Solution(mechanism), mechanism=mechanism)
         test_id = self.test_conditions_table.insert_new_row(
             mechanism=mechanism,
             initial_temp=initial_temp,
@@ -79,63 +60,9 @@ class DataBase:
             equivalence=equivalence,
             diluent=diluent,
             diluent_mol_frac=diluent_mol_frac,
-            cj_speed=cj_speed,
-            ind_len_west=ind_len_west,
-            ind_len_gav=ind_len_gav,
-            ind_len_ng=ind_len_ng,
-            cell_size_west=cell_size_west,
-            cell_size_gav=cell_size_gav,
-            cell_size_ng=cell_size_ng,
         )
 
         return test_id
-
-    def list_tables(self):
-        """
-        Finds every table in a given database.
-
-        Returns
-        -------
-        table_list : list
-            All tables within the requested database
-        """
-        with sqlite3.connect(self._path) as con:
-            cur = con.cursor()
-            cur.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' and name != 'sqlite_sequence';"
-            )
-
-        tables = cur.fetchall()
-        con.close()
-        table_list = [item[0] for item in tables]
-        return table_list
-
-
-def get_table_with_name(cur: sqlite3.Cursor, name: str):
-    name = clean_table_name(name)
-    cur.execute(f"select name from sqlite_master where type='table' and name='{name}';")
-
-
-def clean_table_name(name: str):
-    """
-    Cleans a table name string to keep me from doing anything too stupid.
-    Alphanumeric values and underscores are allowed; anything else will
-    throw a NameError.
-
-    Parameters
-    ----------
-    name : str
-
-    Returns
-    -------
-    str
-    """
-    if any([not (char.isalnum() or char == "_") for char in name]):
-        raise NameError(
-            "Table name must be entirely alphanumeric. Underscores are allowed."
-        )
-    else:
-        return name.lower()
 
 
 def build_query_str(inputs: Dict[str, Any], table_name: str):
@@ -156,7 +83,6 @@ def build_query_str(inputs: Dict[str, Any], table_name: str):
     cmd_str : str
         SQL command to search for the desired inputs
     """
-    table_name = clean_table_name(table_name)
     where = " WHERE " if inputs else ""
     sql_varnames = [f"{item} = :{item}" for item in inputs.keys()]
     cmd_str = f"SELECT * FROM {table_name} {where} {' AND '.join(sql_varnames)};"
@@ -182,7 +108,6 @@ class BaseReactionTable:
 
     def __init__(self, con: sqlite3.Connection):
         self.cur = con.cursor()
-        get_table_with_name(self.cur, self.name)
         if not self.cur.fetchall():
             self._create()
 
@@ -204,6 +129,7 @@ class BaseReactionTable:
         )
 
     @property
+    @lru_cache(maxsize=None)
     def columns(self) -> List[str]:
         """
         A list of all column names in the current table.
@@ -217,9 +143,7 @@ class BaseReactionTable:
             f"DELETE FROM {self.name} WHERE mechanism = :mechanism",
             {"mechanism": mechanism},
         )
-        for rxn_no, rxn, k_i in zip(
-            range(gas.n_reactions), gas.reaction_equations(), gas.forward_rate_constants
-        ):
+        for rxn_no, rxn, k_i in zip(range(gas.n_reactions), gas.reaction_equations(), gas.forward_rate_constants):
             self.cur.execute(
                 f"""
                 INSERT INTO {self.name} VALUES (
@@ -252,7 +176,6 @@ class TestConditionsTable:
 
     def __init__(self, con: sqlite3.Connection):
         self.cur = con.cursor()
-        get_table_with_name(self.cur, self.name)
         if not self.cur.fetchall():
             self._create()
 
@@ -285,6 +208,7 @@ class TestConditionsTable:
         )
 
     @property
+    @lru_cache(maxsize=None)
     def columns(self) -> List[str]:
         """
         A list of all column names in the current table.
@@ -293,111 +217,18 @@ class TestConditionsTable:
 
         return [item[1] for item in self.cur.fetchall()]
 
-    # noinspection PyUnusedLocal
-    def test_exists(
-        self,
-        mechanism=None,
-        initial_temp=None,
-        initial_press=None,
-        fuel=None,
-        oxidizer=None,
-        equivalence=None,
-        diluent=None,
-        diluent_mol_frac=None,
-    ):
+    def test_exists(self, test_id: Optional[int]) -> bool:
         """
         Checks the current table for a specific row of data
 
         Parameters
         ----------
-        mechanism : str
-            Mechanism used for the desired row's computation
-        initial_temp : float
-            Initial temperature for the desired row, in Kelvin
-        initial_press : float
-            Initial pressure for the desired row, in Pascals
-        equivalence : float
-            Equivalence ratio for the desired row
-        fuel : str
-            Fuel used in the desired row
-        oxidizer : str
-            Oxidizer used in the desired row
-        diluent : str
-            Diluent used in the desired row
-        diluent_mol_frac : float
-            Mole fraction of diluent used in the desired row
-
-        Returns
-        -------
-        row_found : bool
+        test_id
+            Test ID corresponding to updated row
         """
-        inputs = {
-            key: value
-            for key, value in inspect.getargvalues(inspect.currentframe())[3].items()
-            if key in self.columns
-        }
-        query_str = build_query_str(inputs, self.name)
-        self.cur.execute(
-            query_str,
-            {key: value for key, value in inputs.items() if value is not None},
-        )
+        self.cur.execute(f"SELECT * from {self.name} WHERE test_id = :test_id", {"test_id": test_id})
 
         return len(self.cur.fetchall()) > 0
-
-    def fetch_rows_by_value(
-        self,
-        mechanism=None,
-        initial_temp=None,
-        initial_press=None,
-        fuel=None,
-        oxidizer=None,
-        equivalence=None,
-        diluent=None,
-        diluent_mol_frac=None,
-    ):
-        """
-        Fetches all rows from the current database with the desired inputs.
-        Any inputs which are None will be left wild.
-
-        Parameters
-        ----------
-        mechanism : str
-            Mechanism to search for
-        initial_temp : float
-            Initial temperature to search for, in Kelvin
-        initial_press : float
-            Initial pressure to search for, in Pascals
-        fuel : str
-            Fuel to search for
-        oxidizer : str
-            Oxidizer to search for
-        equivalence : float
-            Equivalence ratio to search for
-        diluent : str
-            Diluent to search for
-        diluent_mol_frac : float
-            Mole fraction of diluent to search for
-
-        Returns
-        -------
-        data : dict
-            Dictionary containing the rows of the current table which match
-            the input criteria. Keys are column names, and values are lists.
-        """
-        inputs = {
-            "mechanism": mechanism,
-            "initial_temp": initial_temp,
-            "initial_press": initial_press,
-            "equivalence": equivalence,
-            "fuel": fuel,
-            "oxidizer": oxidizer,
-            "diluent": diluent,
-            "diluent_mol_frac": diluent_mol_frac,
-        }
-        cmd_str = build_query_str(inputs=inputs, table_name=self.name)
-        self.cur.execute(cmd_str, inputs)
-
-        return rows_to_dict(self.cur)
 
     def fetch_rows_by_id(self, test_ids: List[int]):
         cleaned_ids = []
@@ -405,9 +236,7 @@ class TestConditionsTable:
             if not isinstance(test_id, int):
                 raise ValueError("Test IDs must be integers.")
             cleaned_ids.append(str(test_id))
-        self.cur.execute(
-            f"SELECT * FROM {self.name} where test_id in ({','.join(cleaned_ids)})"
-        )
+        self.cur.execute(f"SELECT * FROM {self.name} where test_id in ({','.join(cleaned_ids)})")
 
         return rows_to_dict(self.cur)
 
@@ -418,7 +247,83 @@ class TestConditionsTable:
 
         return row_to_dict(self.cur)
 
-    def update_existing_row(
+    def insert_new_row(
+        self,
+        mechanism,
+        initial_temp,
+        initial_press,
+        fuel,
+        oxidizer,
+        equivalence,
+        diluent,
+        diluent_mol_frac,
+    ) -> int:
+        """
+        Stores a row of test data in the current table.
+
+        Parameters
+        ----------
+        mechanism : str
+            Mechanism used for the current row's computation
+        initial_temp : float
+            Initial temperature for the current row, in Kelvin
+        initial_press : float
+            Initial pressure for the current row, in Pascals
+        equivalence : float
+            Equivalence ratio for the current row
+        fuel : str
+            Fuel used in the current row
+        oxidizer : str
+            Oxidizer used in the current row
+        diluent : str
+            Diluent used in the current row
+        diluent_mol_frac : float
+            Mole fraction of diluent used in the current row
+            protect existing entries
+
+        Returns
+        -------
+        test_id : int
+            Test ID
+        """
+        self.cur.execute(
+            f"""
+            INSERT INTO {self.name} VALUES (
+                Null,
+                datetime('now', 'localtime'),
+                :mechanism,
+                :initial_temp,
+                :initial_press,
+                :fuel,
+                :oxidizer,
+                :equivalence,
+                :diluent,
+                :diluent_mol_frac,
+                Null,
+                Null,
+                Null,
+                Null,
+                Null,
+                Null,
+                Null
+            );
+            """,
+            {
+                "mechanism": mechanism,
+                "initial_temp": initial_temp,
+                "initial_press": initial_press,
+                "fuel": fuel,
+                "oxidizer": oxidizer,
+                "equivalence": equivalence,
+                "diluent": diluent,
+                "diluent_mol_frac": diluent_mol_frac,
+            },
+        )
+        self.cur.connection.commit()
+
+        return self.cur.lastrowid
+
+    def add_results(
         self,
         test_id,
         cj_speed,
@@ -430,8 +335,7 @@ class TestConditionsTable:
         cell_size_ng,
     ):
         """
-        Updates the CJ velocity and forward reaction rate (k_i) for a set of
-        conditions.
+        Updates the stored test results for `test_id`
 
         Parameters
         ----------
@@ -479,250 +383,8 @@ class TestConditionsTable:
         )
         self.cur.connection.commit()
 
-    def insert_new_row(
-        self,
-        mechanism,
-        initial_temp,
-        initial_press,
-        fuel,
-        oxidizer,
-        equivalence,
-        diluent,
-        diluent_mol_frac,
-        cj_speed,
-        ind_len_west,
-        ind_len_gav,
-        ind_len_ng,
-        cell_size_west,
-        cell_size_gav,
-        cell_size_ng,
-    ) -> int:
-        """
-        Stores a row of data in the current table.
-
-        If a row with this information already exists in the current table,
-        overwrite_existing decides whether to overwrite the existing data or
-        disregard the current data.
-
-        Parameters
-        ----------
-        mechanism : str
-            Mechanism used for the current row's computation
-        initial_temp : float
-            Initial temperature for the current row, in Kelvin
-        initial_press : float
-            Initial pressure for the current row, in Pascals
-        equivalence : float
-            Equivalence ratio for the current row
-        fuel : str
-            Fuel used in the current row
-        oxidizer : str
-            Oxidizer used in the current row
-        cj_speed : float
-            Current CJ speed
-        diluent : str
-            Diluent used in the current row
-        diluent_mol_frac : float
-            Mole fraction of diluent used in the current row
-            protect existing entries
-        ind_len_west : float
-            Induction length (Westbrook)
-        ind_len_gav : float
-            Induction length (Gavrikov)
-        ind_len_ng : float
-            Induction length (Ng)
-        cell_size_west : float
-            Cell size (Westbrook)
-        cell_size_gav : float
-            Cell size (Gavrikov)
-        cell_size_ng : float
-            Cell size (Ng)
-
-        Returns
-        -------
-        test_id : int
-            Test ID
-        """
-        # todo: don't create duplicate rows
-        self.cur.execute(
-            f"""
-            INSERT INTO {self.name} VALUES (
-                Null,
-                datetime('now', 'localtime'),
-                :mechanism,
-                :initial_temp,
-                :initial_press,
-                :fuel,
-                :oxidizer,
-                :equivalence,
-                :diluent,
-                :diluent_mol_frac,
-                :cj_speed,
-                :ind_len_west,
-                :ind_len_gav,
-                :ind_len_ng,
-                :cell_size_west,
-                :cell_size_gav,
-                :cell_size_ng
-            );
-            """,
-            {
-                "mechanism": mechanism,
-                "initial_temp": initial_temp,
-                "initial_press": initial_press,
-                "fuel": fuel,
-                "oxidizer": oxidizer,
-                "equivalence": equivalence,
-                "diluent": diluent,
-                "diluent_mol_frac": diluent_mol_frac,
-                "cj_speed": cj_speed,
-                "ind_len_west": ind_len_west,
-                "ind_len_gav": ind_len_gav,
-                "ind_len_ng": ind_len_ng,
-                "cell_size_west": cell_size_west,
-                "cell_size_gav": cell_size_gav,
-                "cell_size_ng": cell_size_ng,
-            },
-        )
-        self.cur.connection.commit()
-
-        return self.cur.lastrowid
-
-    def store_row(
-        self,
-        test_id: Optional[
-            int
-        ],  # todo: use this instead of overwrite_existing -- None makes new row, ID edits
-        mechanism,
-        initial_temp,
-        initial_press,
-        fuel,
-        oxidizer,
-        equivalence,
-        diluent,
-        diluent_mol_frac,
-        cj_speed,
-        ind_len_west,
-        ind_len_gav,
-        ind_len_ng,
-        cell_size_west,
-        cell_size_gav,
-        cell_size_ng,
-    ):
-        """
-        Stores a row of data in the current table.
-
-        If a row with this information already exists in the current table,
-        overwrite_existing decides whether to overwrite the existing data or
-        disregard the current data.
-
-        Parameters
-        ----------
-        test_id : Optional[int]
-            Row ID
-            Attempted writes to an existing row will be ignored unless test_id=None is passed
-        mechanism : str
-            Mechanism used for the current row's computation
-        initial_temp : float
-            Initial temperature for the current row, in Kelvin
-        initial_press : float
-            Initial pressure for the current row, in Pascals
-        equivalence : float
-            Equivalence ratio for the current row
-        fuel : str
-            Fuel used in the current row
-        oxidizer : str
-            Oxidizer used in the current row
-        cj_speed : float
-            Current CJ speed
-        diluent : str
-            Diluent used in the current row
-        diluent_mol_frac : float
-            Mole fraction of diluent used in the current row
-        ind_len_west : float
-            Induction length (Westbrook)
-        ind_len_gav : float
-            Induction length (Gavrikov)
-        ind_len_ng : float
-            Induction length (Ng)
-        cell_size_west : float
-            Cell size (Westbrook)
-        cell_size_gav : float
-            Cell size (Gavrikov)
-        cell_size_ng : float
-            Cell size (Ng)
-
-        Returns
-        -------
-        test_id : Optional[int]
-            Row ID
-        """
-        if self.test_exists(
-            mechanism=mechanism,
-            initial_temp=initial_temp,
-            initial_press=initial_press,
-            equivalence=equivalence,
-            fuel=fuel,
-            oxidizer=oxidizer,
-            diluent=diluent,
-            diluent_mol_frac=diluent_mol_frac,
-        ):
-            # a row with the current information was found
-            if test_id is None:
-                [test_id] = self.fetch_rows_by_value(
-                    mechanism=mechanism,
-                    initial_temp=initial_temp,
-                    initial_press=initial_press,
-                    equivalence=equivalence,
-                    fuel=fuel,
-                    oxidizer=oxidizer,
-                    diluent=diluent,
-                    diluent_mol_frac=diluent_mol_frac,
-                )["test_id"]
-                self.update_existing_row(
-                    test_id=test_id,
-                    cj_speed=cj_speed,
-                    ind_len_west=ind_len_west,
-                    ind_len_gav=ind_len_gav,
-                    ind_len_ng=ind_len_ng,
-                    cell_size_west=cell_size_west,
-                    cell_size_gav=cell_size_gav,
-                    cell_size_ng=cell_size_ng,
-                )
-
-                return test_id
-            else:
-                # warn the user that the current input was ignored
-                warnings.warn(
-                    "Cannot overwrite row unless test_id=None is passed", Warning
-                )
-
-                return None
-
-        else:
-            # no rows with the current information were found
-            return self.insert_new_row(
-                mechanism=mechanism,
-                initial_temp=initial_temp,
-                initial_press=initial_press,
-                fuel=fuel,
-                oxidizer=oxidizer,
-                equivalence=equivalence,
-                diluent=diluent,
-                diluent_mol_frac=diluent_mol_frac,
-                cj_speed=cj_speed,
-                ind_len_west=ind_len_west,
-                ind_len_gav=ind_len_gav,
-                ind_len_ng=ind_len_ng,
-                cell_size_west=cell_size_west,
-                cell_size_gav=cell_size_gav,
-                cell_size_ng=cell_size_ng,
-            )
-
 
 class PerturbedResultsTable:
-    # todo: sort out test ID (ex reaction table ID)
-    # todo: add to DataBase
     # todo: update all tests
     # todo: update everything that uses this stuff
 
@@ -739,16 +401,14 @@ class PerturbedResultsTable:
         self._testing = testing
         self._base_rxn_table = base_rxn_table
         self._test_conditions_table = test_conditions_table
-        get_table_with_name(self.cur, self.name)
         if not self.cur.fetchall():
             self._create()
 
+    @property
+    @lru_cache(maxsize=None)
     def columns(self):
         """
-        Returns
-        -------
-        table_info : list
-            A list of all column names in the current table.
+        A list of all column names in the current table.
         """
         self.cur.execute(f"PRAGMA table_info({self.name});")
 
@@ -976,9 +636,7 @@ class PerturbedResultsTable:
                 )
             else:
                 # warn the user that the current input was ignored
-                warnings.warn(
-                    "Cannot overwrite row unless overwrite_existing=True", Warning
-                )
+                warnings.warn("Cannot overwrite row unless overwrite_existing=True", Warning)
 
         else:
             # no rows with the current information were found
@@ -1116,7 +774,7 @@ class PerturbedResultsTable:
         cmd_str = build_query_str(inputs, self.name)
         self.cur.execute(cmd_str, inputs)
         info = self.cur.fetchall()
-        labels = self.columns()
+        labels = self.columns
         data = {lbl: [] for lbl in labels}
         for row in info:
             for lbl, d in zip(labels, row):
