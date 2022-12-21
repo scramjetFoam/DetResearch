@@ -10,7 +10,6 @@ CREATED BY:
     cartemic@oregonstate.edu
 """
 import sqlite3
-import warnings
 from functools import lru_cache
 from typing import Any, Dict, List, Optional
 
@@ -63,31 +62,6 @@ class DataBase:  # todo: implement these changes throughout the code base
         )
 
         return test_id
-
-
-def build_query_str(inputs: Dict[str, Any], table_name: str):
-    """
-    Builds a SQL query string. Any inputs which are None will be left wild.
-
-    Parameters
-    ----------
-    inputs : dict
-        Dictionary of keyword arguments to build a query string around.
-        This has been left as flexible as possible so that this method can
-        build query strings for any of the table types.
-    table_name : str
-        Table which is being queried
-
-    Returns
-    -------
-    cmd_str : str
-        SQL command to search for the desired inputs
-    """
-    where = " WHERE " if inputs else ""
-    sql_varnames = [f"{item} = :{item}" for item in inputs.keys()]
-    cmd_str = f"SELECT * FROM {table_name} {where} {' AND '.join(sql_varnames)};"
-
-    return cmd_str
 
 
 def rows_to_dict(cur: sqlite3.Cursor):
@@ -385,9 +359,6 @@ class TestConditionsTable:
 
 
 class PerturbedResultsTable:
-    # todo: update all tests
-    # todo: update everything that uses this stuff
-
     name = "perturbed_results"
 
     def __init__(
@@ -403,37 +374,6 @@ class PerturbedResultsTable:
         self._test_conditions_table = test_conditions_table
         if not self.cur.fetchall():
             self._create()
-
-    @property
-    @lru_cache(maxsize=None)
-    def columns(self):
-        """
-        A list of all column names in the current table.
-        """
-        self.cur.execute(f"PRAGMA table_info({self.name});")
-
-        return [item[1] for item in self.cur.fetchall()]
-
-    def test_exists(self, rxn_no):  # todo: we also need mechanism -- use composite PK
-        """
-        Checks the current table for a specific row of data
-
-        Parameters
-
-        Returns
-        -------
-        row_found : bool
-            True if a row with the given information was found in the current
-            table, False if not
-        """
-        self.cur.execute(
-            f"""
-            SELECT * from {self.name} WHERE rxn_no = :rxn_no
-            """,
-            {"rxn_no": rxn_no},
-        )
-
-        return len(self.cur.fetchall()) > 0
 
     def _create(self):
         """
@@ -464,202 +404,28 @@ class PerturbedResultsTable:
             """
         )
 
-    def update_row(
-        self,
-        test_id,
-        rxn_no,
-        rxn,
-        k_i,
-        ind_len_west,
-        ind_len_gav,
-        ind_len_ng,
-        cell_size_west,
-        cell_size_gav,
-        cell_size_ng,
-        sens_ind_len_west,
-        sens_ind_len_gav,
-        sens_ind_len_ng,
-        sens_cell_size_west,
-        sens_cell_size_gav,
-        sens_cell_size_ng,
-    ):
+    @property
+    @lru_cache(maxsize=None)
+    def columns(self):
         """
-        Updates the CJ velocity and forward reaction rate (k_i) for a set of
-        conditions.
+        A list of all column names in the current table.
+        """
+        self.cur.execute(f"PRAGMA table_info({self.name});")
 
-        Parameters
-        ----------
-        ind_len_west : float
-            Induction length (Westbrook)
-        ind_len_gav : float
-            Induction length (Gavrikov)
-        ind_len_ng : float
-            Induction length (Ng)
-        cell_size_west : float
-            Cell size (Westbrook)
-        cell_size_gav : float
-            Cell size (Gavrikov)
-        cell_size_ng : float
-            Cell size (Ng)
+        return [item[1] for item in self.cur.fetchall()]
+
+    def row_exists(self, test_id: int, rxn_no: int):
+        """
+        Checks the current table for a specific row of data
         """
         self.cur.execute(
-            f"""
-            UPDATE {self.name} SET
-                k_i = :k_i,
-                ind_len_west = :ind_len_west,
-                ind_len_gav = :ind_len_gav,
-                ind_len_ng = :ind_len_ng,
-                cell_size_west = :cell_size_west,
-                cell_size_gav = :cell_size_gav,
-                cell_size_ng = :cell_size_ng,
-                sens_ind_len_west = :sens_ind_len_west,
-                sens_ind_len_gav = :sens_ind_len_gav,
-                sens_ind_len_ng = :sens_ind_len_ng,
-                sens_cell_size_west = :sens_cell_size_west,
-                sens_cell_size_gav = :sens_cell_size_gav,
-                sens_cell_size_ng = :sens_cell_size_ng
-            WHERE
-                (test_id, rxn_no) = (:rxn_no, :test_id)
-            """,
-            {
-                "test_id": test_id,
-                "rxn_no": rxn_no,
-                "rxn": rxn,
-                "k_i": k_i,
-                "ind_len_west": ind_len_west,
-                "ind_len_gav": ind_len_gav,
-                "ind_len_ng": ind_len_ng,
-                "cell_size_west": cell_size_west,
-                "cell_size_gav": cell_size_gav,
-                "cell_size_ng": cell_size_ng,
-                "sens_ind_len_west": sens_ind_len_west,
-                "sens_ind_len_gav": sens_ind_len_gav,
-                "sens_ind_len_ng": sens_ind_len_ng,
-                "sens_cell_size_west": sens_cell_size_west,
-                "sens_cell_size_gav": sens_cell_size_gav,
-                "sens_cell_size_ng": sens_cell_size_ng,
-            },
+            f"SELECT * from {self.name} WHERE (test_id, rxn_no) = (:test_id, :rxn_no)",
+            dict(test_id=test_id, rxn_no=rxn_no),
         )
-        self.cur.connection.commit()
 
-    def store_row(
-        self,
-        test_id,
-        rxn_no,
-        rxn,
-        k_i,
-        ind_len_west,
-        ind_len_gav,
-        ind_len_ng,
-        cell_size_west,
-        cell_size_gav,
-        cell_size_ng,
-        sens_ind_len_west,
-        sens_ind_len_gav,
-        sens_ind_len_ng,
-        sens_cell_size_west,
-        sens_cell_size_gav,
-        sens_cell_size_ng,
-        overwrite_existing=False,
-    ):
-        """
-        Stores a row of data in the current table.
+        return len(self.cur.fetchall()) > 0
 
-        If a row with this information already exists in the current table,
-        overwrite_existing decides whether to overwrite the existing data or
-        disregard the current data.
-
-        Parameters
-        ----------
-        test_id : int
-            Test ID
-        rxn_no : int
-            Reaction number of the perturbed reaction in the mechanism's
-            reaction list
-        rxn : str
-            Equation for the perturbed reaction
-        k_i : float
-            Forward reaction rate constant for the perturbed reaction
-        ind_len_west : float
-            Induction length (Westbrook)
-        ind_len_gav : float
-            Induction length (Gavrikov)
-        ind_len_ng : float
-            Induction length (Ng)
-        cell_size_west : float
-            Cell size (Westbrook)
-        cell_size_gav : float
-            Cell size (Gavrikov)
-        cell_size_ng : float
-            Cell size (Ng)
-        sens_ind_len_west : float
-            Induction length sensitivity (Westbrook)
-        sens_ind_len_gav : float
-            Induction length sensitivity (Gavrikov)
-        sens_ind_len_ng : float
-            Induction length sensitivity (Ng)
-        sens_cell_size_west : float
-            Cell size (Westbrook)
-        sens_cell_size_gav : float
-            Cell size sensitivity (Gavrikov)
-        sens_cell_size_ng : float
-            Cell size sensitivity (Ng)
-        overwrite_existing : bool
-            True to overwrite an existing entry if it exists, False to
-            protect existing entries
-
-        Returns
-        -------
-        test_id : int
-            Test ID
-        """
-        if self.test_exists(rxn_no):
-            # a row with the current information was found
-            if overwrite_existing:
-                self.update_row(
-                    test_id=test_id,
-                    rxn_no=rxn_no,
-                    rxn=rxn,
-                    k_i=k_i,
-                    ind_len_west=ind_len_west,
-                    ind_len_gav=ind_len_gav,
-                    ind_len_ng=ind_len_ng,
-                    cell_size_west=cell_size_west,
-                    cell_size_gav=cell_size_gav,
-                    cell_size_ng=cell_size_ng,
-                    sens_ind_len_west=sens_ind_len_west,
-                    sens_ind_len_gav=sens_ind_len_gav,
-                    sens_ind_len_ng=sens_ind_len_ng,
-                    sens_cell_size_west=sens_cell_size_west,
-                    sens_cell_size_gav=sens_cell_size_gav,
-                    sens_cell_size_ng=sens_cell_size_ng,
-                )
-            else:
-                # warn the user that the current input was ignored
-                warnings.warn("Cannot overwrite row unless overwrite_existing=True", Warning)
-
-        else:
-            # no rows with the current information were found
-            self.insert_row(
-                test_id=test_id,
-                rxn_no=rxn_no,
-                rxn=rxn,
-                k_i=k_i,
-                ind_len_west=ind_len_west,
-                ind_len_gav=ind_len_gav,
-                ind_len_ng=ind_len_ng,
-                cell_size_west=cell_size_west,
-                cell_size_gav=cell_size_gav,
-                cell_size_ng=cell_size_ng,
-                sens_ind_len_west=sens_ind_len_west,
-                sens_ind_len_gav=sens_ind_len_gav,
-                sens_ind_len_ng=sens_ind_len_ng,
-                sens_cell_size_west=sens_cell_size_west,
-                sens_cell_size_gav=sens_cell_size_gav,
-                sens_cell_size_ng=sens_cell_size_ng,
-            )
-
-    def insert_row(
+    def insert_new_row(
         self,
         test_id: int,
         rxn_no,
@@ -721,63 +487,99 @@ class PerturbedResultsTable:
         )
         self.cur.connection.commit()
 
-    def fetch_rows(
+    def update_row(
         self,
-        test_id=None,
-        rxn_no=None,
-        rxn=None,
-        k_i=None,
-        ind_len_west=None,
-        ind_len_gav=None,
-        ind_len_ng=None,
-        cell_size_west=None,
-        cell_size_gav=None,
-        cell_size_ng=None,
-        sens_ind_len_west=None,
-        sens_ind_len_gav=None,
-        sens_ind_len_ng=None,
-        sens_cell_size_west=None,
-        sens_cell_size_gav=None,
-        sens_cell_size_ng=None,
+        test_id,
+        rxn_no,
+        rxn,
+        k_i,
+        ind_len_west,
+        ind_len_gav,
+        ind_len_ng,
+        cell_size_west,
+        cell_size_gav,
+        cell_size_ng,
+        sens_ind_len_west,
+        sens_ind_len_gav,
+        sens_ind_len_ng,
+        sens_cell_size_west,
+        sens_cell_size_gav,
+        sens_cell_size_ng,
     ):
         """
-        Fetches all rows from the current database with the desired inputs.
-        Any inputs which are None will be left wild.
+        Updates the CJ velocity and forward reaction rate (k_i) for a set of
+        conditions.
 
         Parameters
         ----------
-
-        Returns
-        -------
-        data : dict
-            Dictionary containing the rows of the current table which match
-            the input criteria. Keys are column names, and values are lists.
+        ind_len_west : float
+            Induction length (Westbrook)
+        ind_len_gav : float
+            Induction length (Gavrikov)
+        ind_len_ng : float
+            Induction length (Ng)
+        cell_size_west : float
+            Cell size (Westbrook)
+        cell_size_gav : float
+            Cell size (Gavrikov)
+        cell_size_ng : float
+            Cell size (Ng)
         """
-        inputs = {
-            "test_id": test_id,
-            "rxn_no": rxn_no,
-            "rxn": rxn,
-            "k_i": k_i,
-            "ind_len_west": ind_len_west,
-            "ind_len_gav": ind_len_gav,
-            "ind_len_ng": ind_len_ng,
-            "cell_size_west": cell_size_west,
-            "cell_size_gav": cell_size_gav,
-            "cell_size_ng": cell_size_ng,
-            "sens_ind_len_west": sens_ind_len_west,
-            "sens_ind_len_gav": sens_ind_len_gav,
-            "sens_ind_len_ng": sens_ind_len_ng,
-            "sens_cell_size_west": sens_cell_size_west,
-            "sens_cell_size_gav": sens_cell_size_gav,
-            "sens_cell_size_ng": sens_cell_size_ng,
-        }
-        cmd_str = build_query_str(inputs, self.name)
-        self.cur.execute(cmd_str, inputs)
-        info = self.cur.fetchall()
-        labels = self.columns
-        data = {lbl: [] for lbl in labels}
-        for row in info:
-            for lbl, d in zip(labels, row):
-                data[lbl].append(d)
+        self.cur.execute(
+            f"""
+            UPDATE {self.name} SET
+                k_i = :k_i,
+                ind_len_west = :ind_len_west,
+                ind_len_gav = :ind_len_gav,
+                ind_len_ng = :ind_len_ng,
+                cell_size_west = :cell_size_west,
+                cell_size_gav = :cell_size_gav,
+                cell_size_ng = :cell_size_ng,
+                sens_ind_len_west = :sens_ind_len_west,
+                sens_ind_len_gav = :sens_ind_len_gav,
+                sens_ind_len_ng = :sens_ind_len_ng,
+                sens_cell_size_west = :sens_cell_size_west,
+                sens_cell_size_gav = :sens_cell_size_gav,
+                sens_cell_size_ng = :sens_cell_size_ng
+            WHERE
+                (test_id, rxn_no) = (:test_id, :rxn_no)
+            """,
+            {
+                "test_id": test_id,
+                "rxn_no": rxn_no,
+                "rxn": rxn,
+                "k_i": k_i,
+                "ind_len_west": ind_len_west,
+                "ind_len_gav": ind_len_gav,
+                "ind_len_ng": ind_len_ng,
+                "cell_size_west": cell_size_west,
+                "cell_size_gav": cell_size_gav,
+                "cell_size_ng": cell_size_ng,
+                "sens_ind_len_west": sens_ind_len_west,
+                "sens_ind_len_gav": sens_ind_len_gav,
+                "sens_ind_len_ng": sens_ind_len_ng,
+                "sens_cell_size_west": sens_cell_size_west,
+                "sens_cell_size_gav": sens_cell_size_gav,
+                "sens_cell_size_ng": sens_cell_size_ng,
+            },
+        )
+        self.cur.connection.commit()
 
-        return data
+    def fetch_rows(self, test_id: int) -> Dict[str, List[Any]]:
+        """
+        Fetches all rows from the current test.
+        """
+        self.cur.execute(f"SELECT * FROM {self.name} WHERE test_id = :test_id", dict(test_id=test_id))
+
+        return rows_to_dict(self.cur)
+
+    def fetch_row(self, test_id: int, rxn_no: int) -> Dict[str, Any]:
+        """
+        Fetches a single reaction row from the current test.
+        """
+        self.cur.execute(
+            f"SELECT * FROM {self.name} WHERE (test_id, rxn_no) = (:test_id, :rxn_no)",
+            dict(test_id=test_id, rxn_no=rxn_no),
+        )
+
+        return rows_to_dict(self.cur)
