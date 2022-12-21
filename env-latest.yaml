@@ -154,6 +154,7 @@ dependencies:
     - dash-renderer==1.4.0
     - dash-table==4.6.2
     - decorator==4.4.1
+    - deepdiff==6.2.2
     - dill==0.3.3
     - docutils==0.16
     - esprima==4.0.1
