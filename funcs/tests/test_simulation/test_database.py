@@ -73,6 +73,7 @@ def test_perturbed_results_table():
     perturbed_results = db.PerturbedResults(
         test_id=1,
         rxn_no=0,
+        perturbation_fraction=1e-6,
         rxn="C2 => O + O",
         k_i=19.7,
         ind_len_west=1e-1,
@@ -94,6 +95,7 @@ def test_perturbed_results_table():
     assert table.row_exists(test_id=perturbed_results.test_id, rxn_no=perturbed_results.rxn_no)
 
     for item in (
+        perturbed_results.perturbation_fraction,
         perturbed_results.k_i,
         perturbed_results.ind_len_west,
         perturbed_results.ind_len_gav,

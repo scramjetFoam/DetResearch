@@ -49,6 +49,7 @@ class TestConditions:
 class PerturbedResults:
     test_id: int
     rxn_no: int
+    perturbation_fraction: float
     rxn: str
     k_i: float
     ind_len_west: float
@@ -374,6 +375,7 @@ class PerturbedResultsTable:
                 test_id INTEGER,
                 rxn_no INTEGER,
                 stored_date TEXT,
+                perturbation_fraction REAL,
                 rxn TEXT,
                 k_i REAL,
                 ind_len_west REAL,
@@ -421,6 +423,7 @@ class PerturbedResultsTable:
                 :test_id,
                 :rxn_no,
                 datetime('now', 'localtime'),
+                :perturbation_fraction,
                 :rxn,
                 :k_i,
                 :ind_len_west,
@@ -445,6 +448,7 @@ class PerturbedResultsTable:
         self.cur.execute(
             f"""
             UPDATE {self.name} SET
+                perturbation_fraction = :perturbation_fraction,
                 k_i = :k_i,
                 ind_len_west = :ind_len_west,
                 ind_len_gav = :ind_len_gav,
@@ -470,6 +474,7 @@ class PerturbedResultsTable:
         return PerturbedResults(
             test_id=row["test_id"],
             rxn_no=row["rxn_no"],
+            perturbation_fraction=row["perturbation_fraction"],
             rxn=row["rxn"],
             k_i=row["k_i"],
             ind_len_west=row["ind_len_west"],
