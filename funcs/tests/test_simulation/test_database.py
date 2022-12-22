@@ -36,7 +36,7 @@ def test_test_conditions_table():
     test_db = db.DataBase(path=db_file.name)
     table = test_db.test_conditions_table
 
-    expected_row = dict(
+    test_conditions = db.TestConditions(
         mechanism="gri30.cti",
         initial_temp=300.0,
         initial_press=101325.0,
@@ -45,47 +45,73 @@ def test_test_conditions_table():
         equivalence=1.0,
         diluent="CO2",
         diluent_mol_frac=0.2,
-        cj_speed=1234.5,
+    )
+    assert not table.test_exists(test_id=1)
+
+    test_conditions = table.insert_new_row(test_conditions=test_conditions)
+    assert table.test_exists(test_id=test_conditions.test_id)
+
+    test_conditions.cj_speed = 1234.5
+    test_conditions.ind_len_west = 1e-1
+    test_conditions.ind_len_gav = 1e-2
+    test_conditions.ind_len_ng = 1e-3
+    test_conditions.cell_size_west = 2e-1
+    test_conditions.cell_size_gav = 2e-2
+    test_conditions.cell_size_ng = 2e-3
+    table.update_row(test_conditions=test_conditions)
+    row = table.fetch_row(test_id=test_conditions.test_id)
+    assert deepdiff.DeepDiff(test_conditions, row) == {}
+    rows = table.fetch_rows(test_ids=[test_conditions.test_id])
+    assert deepdiff.DeepDiff(rows, [test_conditions]) == {}
+
+
+def test_perturbed_results_table():
+    db_file = NamedTemporaryFile()
+    test_db = db.DataBase(path=db_file.name)
+    table = test_db.perturbed_results_table
+
+    perturbed_results = db.PerturbedResults(
+        test_id=1,
+        rxn_no=0,
+        rxn="C2 => O + O",
+        k_i=19.7,
         ind_len_west=1e-1,
         ind_len_gav=1e-2,
         ind_len_ng=1e-3,
         cell_size_west=2e-1,
         cell_size_gav=2e-2,
         cell_size_ng=2e-3,
+        sens_cell_size_west=1.2,
+        sens_cell_size_gav=3.4,
+        sens_cell_size_ng=5.6,
+        sens_ind_len_west=2.1,
+        sens_ind_len_gav=4.3,
+        sens_ind_len_ng=6.5,
     )
-    assert not table.test_exists(test_id=1)
+    assert not table.row_exists(test_id=perturbed_results.test_id, rxn_no=perturbed_results.rxn_no)
 
-    test_id = table.insert_new_row(
-        mechanism=expected_row["mechanism"],
-        initial_temp=expected_row["initial_temp"],
-        initial_press=expected_row["initial_press"],
-        fuel=expected_row["fuel"],
-        oxidizer=expected_row["oxidizer"],
-        equivalence=expected_row["equivalence"],
-        diluent=expected_row["diluent"],
-        diluent_mol_frac=expected_row["diluent_mol_frac"],
-    )
-    assert table.test_exists(test_id=test_id)
+    table.insert_new_row(perturbed_results=perturbed_results)
+    assert table.row_exists(test_id=perturbed_results.test_id, rxn_no=perturbed_results.rxn_no)
 
-    table.add_results(
-        test_id=test_id,
-        cj_speed=expected_row["cj_speed"],
-        ind_len_west=expected_row["ind_len_west"],
-        ind_len_gav=expected_row["ind_len_gav"],
-        ind_len_ng=expected_row["ind_len_ng"],
-        cell_size_west=expected_row["cell_size_west"],
-        cell_size_gav=expected_row["cell_size_gav"],
-        cell_size_ng=expected_row["cell_size_ng"],
-    )
-    expected_row["test_id"] = test_id
-    row = table.fetch_row_by_id(test_id=test_id)
-    assert deepdiff.DeepDiff(expected_row, row, exclude_regex_paths=r"date_stored") == {}
-    row = table.fetch_rows_by_id(test_ids=[test_id])
-    assert deepdiff.DeepDiff(
-        {k: [v] for k, v in expected_row.items()},
-        row,
-        exclude_regex_paths=r"date_stored",
-    ) == {}
+    for item in (
+        perturbed_results.k_i,
+        perturbed_results.ind_len_west,
+        perturbed_results.ind_len_gav,
+        perturbed_results.ind_len_ng,
+        perturbed_results.cell_size_west,
+        perturbed_results.cell_size_gav,
+        perturbed_results.cell_size_ng,
+        perturbed_results.sens_cell_size_west,
+        perturbed_results.sens_cell_size_gav,
+        perturbed_results.sens_cell_size_ng,
+        perturbed_results.sens_ind_len_west,
+        perturbed_results.sens_ind_len_gav,
+        perturbed_results.sens_ind_len_ng,
+    ):
+        item *= 2
 
-
-# todo: tests for PerturbedResultsTable
+    table.update_row(perturbed_results=perturbed_results)
+    row = table.fetch_row(test_id=perturbed_results.test_id, rxn_no=perturbed_results.rxn_no)
+    assert deepdiff.DeepDiff(perturbed_results, row) == {}
+    rows = table.fetch_rows(test_id=perturbed_results.test_id)
+    assert deepdiff.DeepDiff(rows, [perturbed_results]) == {}
