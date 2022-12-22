@@ -9,11 +9,64 @@ CREATED BY:
     CIRE and Propulsion Lab
     cartemic@oregonstate.edu
 """
+import dataclasses
 import sqlite3
 from functools import lru_cache
-from typing import Any, Dict, List, Optional
+from typing import List, Optional
 
 import cantera as ct
+
+
+@dataclasses.dataclass
+class TestConditions:
+    mechanism: str
+    initial_temp: float
+    initial_press: float
+    fuel: str
+    oxidizer: str
+    equivalence: float
+    diluent: str
+    diluent_mol_frac: float
+    cj_speed: Optional[float] = None
+    ind_len_west: Optional[float] = None
+    ind_len_gav: Optional[float] = None
+    ind_len_ng: Optional[float] = None
+    cell_size_west: Optional[float] = None
+    cell_size_gav: Optional[float] = None
+    cell_size_ng: Optional[float] = None
+    _test_id: Optional[int] = None
+
+    @property
+    def test_id(self):
+        return self._test_id
+
+    def to_dict(self):
+        d = dataclasses.asdict(self)
+        return {k.lstrip("_"): v for (k, v) in d.items()}
+
+
+@dataclasses.dataclass
+class PerturbedResults:
+    test_id: int
+    rxn_no: int
+    rxn: str
+    k_i: float
+    ind_len_west: float
+    ind_len_gav: float
+    ind_len_ng: float
+    cell_size_west: float
+    cell_size_gav: float
+    cell_size_ng: float
+    sens_ind_len_west: float
+    sens_ind_len_gav: float
+    sens_ind_len_ng: float
+    sens_cell_size_west: float
+    sens_cell_size_gav: float
+    sens_cell_size_ng: float
+
+    def to_dict(self):
+        d = dataclasses.asdict(self)
+        return {k: v for (k, v) in d.items()}
 
 
 class DataBase:  # todo: implement these changes throughout the code base
@@ -47,34 +100,22 @@ class DataBase:  # todo: implement these changes throughout the code base
         equivalence,
         diluent,
         diluent_mol_frac,
-    ):
+    ) -> TestConditions:
         if not self.base_rxn_table.has_mechanism(mechanism=mechanism):
             self.base_rxn_table.store_all_reactions(gas=ct.Solution(mechanism), mechanism=mechanism)
-        test_id = self.test_conditions_table.insert_new_row(
-            mechanism=mechanism,
-            initial_temp=initial_temp,
-            initial_press=initial_press,
-            fuel=fuel,
-            oxidizer=oxidizer,
-            equivalence=equivalence,
-            diluent=diluent,
-            diluent_mol_frac=diluent_mol_frac,
+
+        return self.test_conditions_table.insert_new_row(
+            test_conditions=TestConditions(
+                mechanism=mechanism,
+                initial_temp=initial_temp,
+                initial_press=initial_press,
+                fuel=fuel,
+                oxidizer=oxidizer,
+                equivalence=equivalence,
+                diluent=diluent,
+                diluent_mol_frac=diluent_mol_frac,
+            ),
         )
-
-        return test_id
-
-
-def rows_to_dict(cur: sqlite3.Cursor):
-    data = {}
-    for row in (dict(r) for r in cur.fetchall()):
-        for col, value in row.items():
-            data.setdefault(col, []).append(value)
-
-    return data
-
-
-def row_to_dict(cur: sqlite3.Cursor):
-    return dict(cur.fetchone())
 
 
 class BaseReactionTable:
@@ -204,7 +245,28 @@ class TestConditionsTable:
 
         return len(self.cur.fetchall()) > 0
 
-    def fetch_rows_by_id(self, test_ids: List[int]):
+    @staticmethod
+    def _row_to_test_conditions(row: sqlite3.Row) -> TestConditions:
+        return TestConditions(
+            _test_id=row["test_id"],
+            mechanism=row["mechanism"],
+            initial_temp=row["initial_temp"],
+            initial_press=row["initial_press"],
+            fuel=row["fuel"],
+            oxidizer=row["oxidizer"],
+            equivalence=row["equivalence"],
+            diluent=row["diluent"],
+            diluent_mol_frac=row["diluent_mol_frac"],
+            cj_speed=row["cj_speed"],
+            ind_len_west=row["ind_len_west"],
+            ind_len_gav=row["ind_len_gav"],
+            ind_len_ng=row["ind_len_ng"],
+            cell_size_west=row["cell_size_west"],
+            cell_size_gav=row["cell_size_gav"],
+            cell_size_ng=row["cell_size_ng"],
+        )
+
+    def fetch_rows(self, test_ids: List[int]) -> List[TestConditions]:
         cleaned_ids = []
         for test_id in test_ids:
             if not isinstance(test_id, int):
@@ -212,53 +274,18 @@ class TestConditionsTable:
             cleaned_ids.append(str(test_id))
         self.cur.execute(f"SELECT * FROM {self.name} where test_id in ({','.join(cleaned_ids)})")
 
-        return rows_to_dict(self.cur)
+        return [self._row_to_test_conditions(row) for row in self.cur.fetchall()]
 
-    def fetch_row_by_id(self, test_id: int):
+    def fetch_row(self, test_id: int) -> TestConditions:
         if not isinstance(test_id, int):
             raise ValueError("Test IDs must be integers.")
         self.cur.execute(f"SELECT * FROM {self.name} where test_id = {test_id}")
 
-        return row_to_dict(self.cur)
+        return self._row_to_test_conditions(self.cur.fetchone())
 
-    def insert_new_row(
-        self,
-        mechanism,
-        initial_temp,
-        initial_press,
-        fuel,
-        oxidizer,
-        equivalence,
-        diluent,
-        diluent_mol_frac,
-    ) -> int:
+    def insert_new_row(self, test_conditions: TestConditions) -> TestConditions:
         """
         Stores a row of test data in the current table.
-
-        Parameters
-        ----------
-        mechanism : str
-            Mechanism used for the current row's computation
-        initial_temp : float
-            Initial temperature for the current row, in Kelvin
-        initial_press : float
-            Initial pressure for the current row, in Pascals
-        equivalence : float
-            Equivalence ratio for the current row
-        fuel : str
-            Fuel used in the current row
-        oxidizer : str
-            Oxidizer used in the current row
-        diluent : str
-            Diluent used in the current row
-        diluent_mol_frac : float
-            Mole fraction of diluent used in the current row
-            protect existing entries
-
-        Returns
-        -------
-        test_id : int
-            Test ID
         """
         self.cur.execute(
             f"""
@@ -273,62 +300,33 @@ class TestConditionsTable:
                 :equivalence,
                 :diluent,
                 :diluent_mol_frac,
-                Null,
-                Null,
-                Null,
-                Null,
-                Null,
-                Null,
-                Null
+                :cj_speed,
+                :ind_len_west,
+                :ind_len_gav,
+                :ind_len_ng,
+                :cell_size_west,
+                :cell_size_gav,
+                :cell_size_ng
             );
             """,
-            {
-                "mechanism": mechanism,
-                "initial_temp": initial_temp,
-                "initial_press": initial_press,
-                "fuel": fuel,
-                "oxidizer": oxidizer,
-                "equivalence": equivalence,
-                "diluent": diluent,
-                "diluent_mol_frac": diluent_mol_frac,
-            },
+            test_conditions.to_dict(),
         )
         self.cur.connection.commit()
+        test_conditions._test_id = self.cur.lastrowid
 
-        return self.cur.lastrowid
+        return test_conditions
 
-    def add_results(
-        self,
-        test_id,
-        cj_speed,
-        ind_len_west,
-        ind_len_gav,
-        ind_len_ng,
-        cell_size_west,
-        cell_size_gav,
-        cell_size_ng,
-    ):
+    def update_row(self, test_conditions: TestConditions):
         """
-        Updates the stored test results for `test_id`
+        Updates the following items in the database:
 
-        Parameters
-        ----------
-        test_id:
-            Test ID corresponding to updated row
-        cj_speed : float
-            CJ speed to update
-        ind_len_west : float
-            Induction length (Westbrook)
-        ind_len_gav : float
-            Induction length (Gavrikov)
-        ind_len_ng : float
-            Induction length (Ng)
-        cell_size_west : float
-            Cell size (Westbrook)
-        cell_size_gav : float
-            Cell size (Gavrikov)
-        cell_size_ng : float
-            Cell size (Ng)
+        * cj_speed
+        * ind_len_west
+        * ind_len_gav
+        * ind_len_ng
+        * cell_size_west
+        * cell_size_gav
+        * cell_size_ng
         """
         self.cur.execute(
             f"""
@@ -344,16 +342,7 @@ class TestConditionsTable:
             WHERE
                 test_id = :test_id
             """,
-            {
-                "cj_speed": cj_speed,
-                "ind_len_west": ind_len_west,
-                "ind_len_gav": ind_len_gav,
-                "ind_len_ng": ind_len_ng,
-                "cell_size_west": cell_size_west,
-                "cell_size_gav": cell_size_gav,
-                "cell_size_ng": cell_size_ng,
-                "test_id": test_id,
-            },
+            test_conditions.to_dict(),
         )
         self.cur.connection.commit()
 
@@ -386,7 +375,7 @@ class PerturbedResultsTable:
                 rxn_no INTEGER,
                 stored_date TEXT,
                 rxn TEXT,
-                k_i_pert REAL,
+                k_i REAL,
                 ind_len_west REAL,
                 ind_len_gav REAL,
                 ind_len_ng REAL,
@@ -425,31 +414,13 @@ class PerturbedResultsTable:
 
         return len(self.cur.fetchall()) > 0
 
-    def insert_new_row(
-        self,
-        test_id: int,
-        rxn_no,
-        rxn,
-        k_i,
-        ind_len_west,
-        ind_len_gav,
-        ind_len_ng,
-        cell_size_west,
-        cell_size_gav,
-        cell_size_ng,
-        sens_ind_len_west,
-        sens_ind_len_gav,
-        sens_ind_len_ng,
-        sens_cell_size_west,
-        sens_cell_size_gav,
-        sens_cell_size_ng,
-    ):
+    def insert_new_row(self, perturbed_results: PerturbedResults):
         self.cur.execute(
             f"""
             INSERT INTO {self.name} VALUES (
                 :test_id,
                 :rxn_no,
-                stored_date: datetime('now', 'localtime'),
+                datetime('now', 'localtime'),
                 :rxn,
                 :k_i,
                 :ind_len_west,
@@ -466,65 +437,11 @@ class PerturbedResultsTable:
                 :sens_cell_size_ng
             );
             """,
-            {
-                "test_id": test_id,
-                "rxn_no": rxn_no,
-                "rxn": rxn,
-                "k_i": k_i,
-                "ind_len_west": ind_len_west,
-                "ind_len_gav": ind_len_gav,
-                "ind_len_ng": ind_len_ng,
-                "cell_size_west": cell_size_west,
-                "cell_size_gav": cell_size_gav,
-                "cell_size_ng": cell_size_ng,
-                "sens_ind_len_west": sens_ind_len_west,
-                "sens_ind_len_gav": sens_ind_len_gav,
-                "sens_ind_len_ng": sens_ind_len_ng,
-                "sens_cell_size_west": sens_cell_size_west,
-                "sens_cell_size_gav": sens_cell_size_gav,
-                "sens_cell_size_ng": sens_cell_size_ng,
-            },
+            perturbed_results.to_dict(),
         )
         self.cur.connection.commit()
 
-    def update_row(
-        self,
-        test_id,
-        rxn_no,
-        rxn,
-        k_i,
-        ind_len_west,
-        ind_len_gav,
-        ind_len_ng,
-        cell_size_west,
-        cell_size_gav,
-        cell_size_ng,
-        sens_ind_len_west,
-        sens_ind_len_gav,
-        sens_ind_len_ng,
-        sens_cell_size_west,
-        sens_cell_size_gav,
-        sens_cell_size_ng,
-    ):
-        """
-        Updates the CJ velocity and forward reaction rate (k_i) for a set of
-        conditions.
-
-        Parameters
-        ----------
-        ind_len_west : float
-            Induction length (Westbrook)
-        ind_len_gav : float
-            Induction length (Gavrikov)
-        ind_len_ng : float
-            Induction length (Ng)
-        cell_size_west : float
-            Cell size (Westbrook)
-        cell_size_gav : float
-            Cell size (Gavrikov)
-        cell_size_ng : float
-            Cell size (Ng)
-        """
+    def update_row(self, perturbed_results: PerturbedResults):
         self.cur.execute(
             f"""
             UPDATE {self.name} SET
@@ -544,36 +461,40 @@ class PerturbedResultsTable:
             WHERE
                 (test_id, rxn_no) = (:test_id, :rxn_no)
             """,
-            {
-                "test_id": test_id,
-                "rxn_no": rxn_no,
-                "rxn": rxn,
-                "k_i": k_i,
-                "ind_len_west": ind_len_west,
-                "ind_len_gav": ind_len_gav,
-                "ind_len_ng": ind_len_ng,
-                "cell_size_west": cell_size_west,
-                "cell_size_gav": cell_size_gav,
-                "cell_size_ng": cell_size_ng,
-                "sens_ind_len_west": sens_ind_len_west,
-                "sens_ind_len_gav": sens_ind_len_gav,
-                "sens_ind_len_ng": sens_ind_len_ng,
-                "sens_cell_size_west": sens_cell_size_west,
-                "sens_cell_size_gav": sens_cell_size_gav,
-                "sens_cell_size_ng": sens_cell_size_ng,
-            },
+            perturbed_results.to_dict(),
         )
         self.cur.connection.commit()
 
-    def fetch_rows(self, test_id: int) -> Dict[str, List[Any]]:
+    @staticmethod
+    def _row_to_perturbed_results(row: sqlite3.Row) -> PerturbedResults:
+        return PerturbedResults(
+            test_id=row["test_id"],
+            rxn_no=row["rxn_no"],
+            rxn=row["rxn"],
+            k_i=row["k_i"],
+            ind_len_west=row["ind_len_west"],
+            ind_len_gav=row["ind_len_gav"],
+            ind_len_ng=row["ind_len_ng"],
+            cell_size_west=row["cell_size_west"],
+            cell_size_gav=row["cell_size_gav"],
+            cell_size_ng=row["cell_size_ng"],
+            sens_ind_len_west=row["sens_ind_len_west"],
+            sens_ind_len_gav=row["sens_ind_len_gav"],
+            sens_ind_len_ng=row["sens_ind_len_ng"],
+            sens_cell_size_west=row["sens_cell_size_west"],
+            sens_cell_size_gav=row["sens_cell_size_gav"],
+            sens_cell_size_ng=row["sens_cell_size_ng"],
+        )
+
+    def fetch_rows(self, test_id: int) -> List[PerturbedResults]:
         """
         Fetches all rows from the current test.
         """
         self.cur.execute(f"SELECT * FROM {self.name} WHERE test_id = :test_id", dict(test_id=test_id))
 
-        return rows_to_dict(self.cur)
+        return [self._row_to_perturbed_results(row) for row in self.cur.fetchall()]
 
-    def fetch_row(self, test_id: int, rxn_no: int) -> Dict[str, Any]:
+    def fetch_row(self, test_id: int, rxn_no: int) -> PerturbedResults:
         """
         Fetches a single reaction row from the current test.
         """
@@ -582,4 +503,4 @@ class PerturbedResultsTable:
             dict(test_id=test_id, rxn_no=rxn_no),
         )
 
-        return rows_to_dict(self.cur)
+        return self._row_to_perturbed_results(self.cur.fetchone())
