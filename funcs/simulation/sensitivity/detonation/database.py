@@ -17,6 +17,10 @@ from typing import List, Optional
 import cantera as ct
 
 
+class DatabaseError(Exception):
+    pass
+
+
 @dataclasses.dataclass
 class TestConditions:
     mechanism: str
@@ -91,32 +95,17 @@ class DataBase:  # todo: implement these changes throughout the code base
         self.con.commit()
         self.con.close()
 
-    def new_test(
-        self,
-        mechanism,
-        initial_temp,
-        initial_press,
-        fuel,
-        oxidizer,
-        equivalence,
-        diluent,
-        diluent_mol_frac,
-    ) -> TestConditions:
-        if not self.base_rxn_table.has_mechanism(mechanism=mechanism):
-            self.base_rxn_table.store_all_reactions(gas=ct.Solution(mechanism), mechanism=mechanism)
+    def new_test(self, test_conditions: TestConditions) -> TestConditions:
+        if test_conditions.test_id is not None:
+            raise DatabaseError("Cannot create a new test unless test_conditions has test_id = None")
 
-        return self.test_conditions_table.insert_new_row(
-            test_conditions=TestConditions(
-                mechanism=mechanism,
-                initial_temp=initial_temp,
-                initial_press=initial_press,
-                fuel=fuel,
-                oxidizer=oxidizer,
-                equivalence=equivalence,
-                diluent=diluent,
-                diluent_mol_frac=diluent_mol_frac,
-            ),
-        )
+        if not self.base_rxn_table.has_mechanism(mechanism=test_conditions.mechanism):
+            self.base_rxn_table.store_all_reactions(
+                gas=ct.Solution(test_conditions.mechanism),
+                mechanism=test_conditions.mechanism,
+            )
+
+        return self.test_conditions_table.insert_new_row(test_conditions=test_conditions)
 
 
 class BaseReactionTable:
@@ -271,7 +260,7 @@ class TestConditionsTable:
         cleaned_ids = []
         for test_id in test_ids:
             if not isinstance(test_id, int):
-                raise ValueError("Test IDs must be integers.")
+                raise DatabaseError("Test IDs must be integers.")
             cleaned_ids.append(str(test_id))
         self.cur.execute(f"SELECT * FROM {self.name} where test_id in ({','.join(cleaned_ids)})")
 
@@ -279,7 +268,7 @@ class TestConditionsTable:
 
     def fetch_row(self, test_id: int) -> TestConditions:
         if not isinstance(test_id, int):
-            raise ValueError("Test IDs must be integers.")
+            raise DatabaseError("Test IDs must be integers.")
         self.cur.execute(f"SELECT * FROM {self.name} where test_id = {test_id}")
 
         return self._row_to_test_conditions(self.cur.fetchone())
@@ -288,6 +277,9 @@ class TestConditionsTable:
         """
         Stores a row of test data in the current table.
         """
+        if test_conditions.test_id is not None:
+            raise DatabaseError("Cannot create a new test unless test_conditions has test_id = None")
+
         self.cur.execute(
             f"""
             INSERT INTO {self.name} VALUES (
