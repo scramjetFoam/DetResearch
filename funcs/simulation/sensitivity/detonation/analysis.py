@@ -72,9 +72,8 @@ def perform_study(
     if test_conditions.needs_cell_size_calc():
         overwrite_existing = True  # we need to recalculate to keep the state consistent
         with db_lock:
-            base_cell_calcs = cell_size.CellSize()
-            base_cell_calcs(
-                base_mechanism=test_conditions.mechanism,
+            base_cell_calcs = cell_size.calculate(
+                mechanism=test_conditions.mechanism,
                 cj_speed=test_conditions.cj_speed,
                 initial_temp=test_conditions.initial_temp,
                 initial_press=test_conditions.initial_press,
@@ -125,7 +124,7 @@ class SensitivityResults:
 
 def calculate_sensitivities(
     base_test_conditions: db.TestConditions,
-    perturbed_results: cell_size.CellSize,
+    perturbed_results: cell_size.CellSizeResults,
     perturbation_fraction: float,
 ):
     def calculate_sensitivity(base: float, perturbed: float):
@@ -169,9 +168,11 @@ def calculate_perturbed_cell_size_and_sensitivity(
     max_step_znd: float,
     perturbation_fraction: float
 ) -> db.PerturbedResults:
-    pert_cell_calcs = cell_size.CellSize()
-    pert_cell_calcs(
-        base_mechanism=base_test_conditions.mechanism,
+    if perturbed_reaction_no is None:
+        raise ValueError("Cannot calculate perturbed cell sizes with perturbed_reaction = None")
+
+    pert_cell_calcs = cell_size.calculate(
+        mechanism=base_test_conditions.mechanism,
         cj_speed=base_test_conditions.cj_speed,
         initial_temp=base_test_conditions.initial_temp,
         initial_press=base_test_conditions.initial_press,
@@ -193,8 +194,8 @@ def calculate_perturbed_cell_size_and_sensitivity(
             test_id=base_test_conditions.test_id,
             rxn_no=perturbed_reaction_no,
             perturbation_fraction=perturbation_fraction,
-            rxn=pert_cell_calcs.base_gas.reaction_equation(perturbed_reaction_no),
-            k_i=pert_cell_calcs.base_gas.forward_rate_constants[perturbed_reaction_no],
+            rxn=pert_cell_calcs.reaction_equation,  # won't be None if perturbed_reaction_no is not None
+            k_i=pert_cell_calcs.k_i,  # won't be None if perturbed_reaction_no is not None
             ind_len_west=pert_cell_calcs.induction_length.westbrook,
             ind_len_gav=pert_cell_calcs.induction_length.gavrikov,
             ind_len_ng=pert_cell_calcs.induction_length.ng,
