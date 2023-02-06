@@ -21,12 +21,12 @@ if __name__ == '__main__':
     initial_temp = 300
     initial_press = 101325
     equivalence = 1
-    fuel = 'H2'
-    oxidizer = 'O2'
-    diluent_to_match = 'CO2'
+    fuel = "H2"
+    oxidizer = "O2"
+    diluent_to_match = "CO2"
     diluent = "N2"
     diluent_mol_frac_to_match = 0.05
-    always_overwrite_existing = False
+    overwrite_existing_perturbed_results = False
 
     # Preparations
     if diluent_to_match == diluent:
@@ -55,7 +55,8 @@ if __name__ == '__main__':
             equivalence=equivalence,
             diluent=diluent,
             diluent_mol_frac=diluent_mol_frac,
-        )
+        ),
+        max_step_znd=max_step_znd,
     )
     print("Done!")
     reactions = ct.Reaction().listFromFile(mechanism)
@@ -75,7 +76,7 @@ if __name__ == '__main__':
                         perturbed_rxn_no,
                         db_path,
                         max_step_znd,
-                        always_overwrite_existing,
+                        overwrite_existing_perturbed_results,
                     ] for perturbed_rxn_no in range(n_rxns)
                 ]
             ),

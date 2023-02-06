@@ -7,18 +7,9 @@ from ..gas import build as build_gas
 from . import database as db
 
 
-def initialize_study(db_path: str, test_conditions: db.TestConditions) -> db.TestConditions:
+def initialize_study(db_path: str, test_conditions: db.TestConditions, max_step_znd: float) -> db.TestConditions:
     """
     Creates a new row and performs CJ speed calculations, both as needed, and returns updated TestConditions
-
-    Parameters
-    ----------
-    db_path: path to database
-    test_conditions: desired test conditions
-
-    Returns
-    -------
-    updated test conditions (with test_id and cj_speed)
     """
     database = db.DataBase(path=db_path)
     if test_conditions.test_id is None:
@@ -46,6 +37,29 @@ def initialize_study(db_path: str, test_conditions: db.TestConditions) -> db.Tes
         )
         database.test_conditions_table.update_row(test_conditions=test_conditions)
 
+    # This is the base cell size, which is used for all sensitivity calculations and is therefore required before any
+    # further cell size calculations occur.
+    if test_conditions.needs_cell_size_calc():
+        base_cell_calcs = cell_size.calculate(
+            mechanism=test_conditions.mechanism,
+            cj_speed=test_conditions.cj_speed,
+            initial_temp=test_conditions.initial_temp,
+            initial_press=test_conditions.initial_press,
+            fuel=test_conditions.fuel,
+            oxidizer=test_conditions.oxidizer,
+            equivalence=test_conditions.equivalence,
+            diluent=test_conditions.diluent,
+            diluent_mol_frac=test_conditions.diluent_mol_frac,
+            max_step_znd=max_step_znd,
+        )
+        test_conditions.ind_len_gav = base_cell_calcs.induction_length.gavrikov
+        test_conditions.ind_len_ng = base_cell_calcs.induction_length.ng
+        test_conditions.ind_len_west = base_cell_calcs.induction_length.westbrook
+        test_conditions.cell_size_gav = base_cell_calcs.cell_size.gavrikov
+        test_conditions.cell_size_ng = base_cell_calcs.cell_size.ng
+        test_conditions.cell_size_west = base_cell_calcs.cell_size.westbrook
+        database.test_conditions_table.update_row(test_conditions=test_conditions)
+
     return test_conditions
 
 
@@ -55,10 +69,10 @@ def perform_study(
     perturbed_reaction_no: int,
     db_path: str,
     max_step_znd: float,
-    always_overwrite_existing: bool,
+    overwrite_existing: bool,
 ):
     database = db.DataBase(path=db_path)
-    overwrite_existing = always_overwrite_existing
+    overwrite_existing = overwrite_existing
 
     # I could definitely be doing a much better job of cache invalidation, but more than anything I want this to run,
     # and this isn't exactly production code so... meh.
@@ -66,32 +80,6 @@ def perform_study(
         raise ValueError("TestConditions must be initiated prior to study initiation")
     elif not database.test_conditions_table.test_exists(test_id=test_conditions.test_id):
         raise db.DatabaseError(f"Test conditions were given for a nonexistent row: {test_conditions}")
-
-    # This is the base cell size, which is used for all sensitivity calculations and is therefore required before any
-    # further cell size calculations occur, hence the lock.
-    if test_conditions.needs_cell_size_calc():
-        overwrite_existing = True  # we need to recalculate to keep the state consistent
-        with db_lock:
-            base_cell_calcs = cell_size.calculate(
-                mechanism=test_conditions.mechanism,
-                cj_speed=test_conditions.cj_speed,
-                initial_temp=test_conditions.initial_temp,
-                initial_press=test_conditions.initial_press,
-                fuel=test_conditions.fuel,
-                oxidizer=test_conditions.oxidizer,
-                equivalence=test_conditions.equivalence,
-                diluent=test_conditions.diluent,
-                diluent_mol_frac=test_conditions.diluent_mol_frac,
-                max_step_znd=max_step_znd,
-            )
-            test_conditions.ind_len_gav = base_cell_calcs.induction_length.gavrikov
-            test_conditions.ind_len_ng = base_cell_calcs.induction_length.ng
-            test_conditions.ind_len_west = base_cell_calcs.induction_length.westbrook
-            test_conditions.cell_size_gav = base_cell_calcs.cell_size.gavrikov
-            test_conditions.cell_size_ng = base_cell_calcs.cell_size.ng
-            test_conditions.cell_size_west = base_cell_calcs.cell_size.westbrook
-            database.test_conditions_table.update_row(test_conditions=test_conditions)
-            del base_cell_calcs
 
     if overwrite_existing:
         # calculate, then overwrite or insert
