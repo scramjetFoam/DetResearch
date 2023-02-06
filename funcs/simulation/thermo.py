@@ -2,8 +2,6 @@ import cantera as ct
 import numpy as np
 from scipy.optimize import minimize
 
-ORIGINAL_SOLUTION = ct.Solution
-
 
 def diluted_species_dict(
         spec,

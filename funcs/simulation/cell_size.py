@@ -16,16 +16,16 @@ import dataclasses
 
 import cantera as ct
 import numpy as np
+import sdtoolbox
 
-from .thermo import diluted_species_dict, ORIGINAL_SOLUTION
+from .thermo import diluted_species_dict
 
 
 def wrapped_cvsolve(
-        gas,
-        sd,
-        max_tries=10,
-        t_end=1e-6,
-        max_step=1e-5,
+    gas,
+    max_tries=10,
+    t_end=1e-6,
+    max_step=1e-5,
 ):
     """
     Look jack, I don't have time for your `breaking` malarkey
@@ -37,8 +37,6 @@ def wrapped_cvsolve(
     ----------
     gas : ct.Solution
         gas object to work on
-    sd : module
-        locally modified sdtoolbox
     max_tries : int
         how motivated are you
     t_end : float
@@ -63,34 +61,24 @@ def wrapped_cvsolve(
             # this exception is broad on purpose.
             # noinspection PyBroadException
             try:
-                out = sd.cv.cvsolve(
-                    gas,
-                    t_end=t_end,
-                    max_step=max_step,
-                )
-                return out
+                out = sdtoolbox.cv.cvsolve(gas, t_end=t_end, max_step=max_step)
+                break
             except:  # noqa: E722
-                pass
+                t_end *= 2
+                max_step *= 2
         else:
             # let it break if it's gonna break after max tries
-            out = sd.cv.cvsolve(
-                gas,
-                t_end=t_end,
-                max_step=max_step,
-            )
-        t_end *= 2
-        max_step *= 2
+            out = sdtoolbox.cv.cvsolve(gas, t_end=t_end, max_step=max_step)
     return out
 
 
 def wrapped_zndsolve(
-        gas,
-        base_gas,
-        cj_speed,
-        t_end,
-        max_step,
-        sd,
-        max_tries=5
+    gas,
+    base_gas,
+    cj_speed,
+    t_end,
+    max_step,
+    max_tries=5
 ):
     tries = 0
     init_tpx = gas.TPX
@@ -104,7 +92,7 @@ def wrapped_zndsolve(
         tries += 1
         if tries < max_tries:
             try:
-                out = sd.znd.zndsolve(
+                out = sdtoolbox.znd.zndsolve(
                     gas,
                     base_gas,
                     cj_speed,
@@ -112,14 +100,12 @@ def wrapped_zndsolve(
                     t_end=t_end,
                     max_step=max_step
                 )
-                return out
-            except ct.CanteraError:
-                pass
-            except ValueError:
-                pass
+                break
+            except (ct.CanteraError, ValueError):
+                max_step /= 10.
         else:
             # let it break if it's gonna break after max tries
-            out = sd.znd.zndsolve(
+            out = sdtoolbox.znd.zndsolve(
                 gas,
                 base_gas,
                 cj_speed,
@@ -127,7 +113,6 @@ def wrapped_zndsolve(
                 t_end=t_end,
                 max_step=max_step
             )
-        max_step /= 10.
     return out
 
 
@@ -177,7 +162,7 @@ class CellSize:
             diluent,
             diluent_mol_frac,
             cj_speed,
-            perturbed_reaction=-1,
+            perturbed_reaction=None,
             perturbation_fraction=1e-2,
             max_tries_znd=10,
             max_step_znd=1e-4,
@@ -185,10 +170,6 @@ class CellSize:
             cv_end_time=1e-6,
             max_step_cv=5e-7
     ):
-        # sdt import is here to avoid any module-level weirdness stemming from
-        # Solution object modification
-        import sdtoolbox as sd
-
         # self.mechanism will change with inert species, but base will not
         self.mechanism = base_mechanism
         self.base_mechanism = base_mechanism
@@ -203,59 +184,33 @@ class CellSize:
         self.perturbed_reaction = perturbed_reaction
         self.perturbation_fraction = perturbation_fraction
 
-        if perturbed_reaction != -1:
-            # alter ct.Solution within sdtoolbox so that it returns perturbed
-            # reaction results
-            def my_solution(mech):
-                original_gas = ORIGINAL_SOLUTION(mech)
-                original_gas.set_multiplier(
-                    1 + perturbation_fraction,
-                    perturbed_reaction
-                )
-                return original_gas
-            sd.postshock.ct.Solution = my_solution
-
         self.base_gas = self._build_gas_object()
         q = self.base_gas.X
 
-        if perturbed_reaction >= 0:
-            assert (self.base_gas.multiplier(perturbed_reaction) ==
-                    1 + perturbation_fraction)
-        for rxn in range(self.base_gas.n_reactions):
-            if rxn != perturbed_reaction:
-                assert self.base_gas.multiplier(rxn) == 1
-
         # FIND EQUILIBRIUM POST SHOCK STATE FOR GIVEN SPEED
-        gas = sd.postshock.PostShock_eq(
-            cj_speed,
-            initial_press,
-            initial_temp,
-            q,
-            self.mechanism
+        gas = sdtoolbox.postshock.PostShock_eq(
+            U1=cj_speed,
+            P1=initial_press,
+            T1=initial_temp,
+            q=q,
+            mech=self.mechanism,
+            perturbed_rxn_no=perturbed_reaction,
+            perturbation_fraction=perturbation_fraction,
         )
-
-        if perturbed_reaction >= 0:
-            assert (gas.multiplier(perturbed_reaction) ==
-                    1 + perturbation_fraction)
-        for rxn in range(gas.n_reactions):
-            if rxn != perturbed_reaction:
-                assert gas.multiplier(rxn) == 1
 
         u_cj = cj_speed * self.base_gas.density / gas.density
         self.cj_speed = u_cj
 
         # FIND FROZEN POST SHOCK STATE FOR GIVEN SPEED
-        gas = sd.postshock.PostShock_fr(
-            cj_speed,
-            initial_press,
-            initial_temp,
-            q,
-            self.mechanism
+        gas = sdtoolbox.postshock.PostShock_fr(
+            U1=cj_speed,
+            P1=initial_press,
+            T1=initial_temp,
+            q=q,
+            mech=self.mechanism,
+            perturbed_rxn_no=perturbed_reaction,
+            perturbation_fraction=perturbation_fraction,
         )
-
-        if perturbed_reaction >= 0:
-            assert (gas.multiplier(perturbed_reaction) ==
-                    1 + perturbation_fraction)
 
         # SOLVE ZND DETONATION ODES
         out = wrapped_zndsolve(
@@ -264,18 +219,19 @@ class CellSize:
             cj_speed=cj_speed,
             t_end=2e-3,
             max_step=max_step_znd,
-            sd=sd,
-            max_tries=max_tries_znd
+            max_tries=max_tries_znd,
         )
 
         # Find CV parameters including effective activation energy
         gas.TPX = initial_temp, initial_press, q
-        gas = sd.postshock.PostShock_fr(
-            cj_speed,
-            initial_press,
-            initial_temp,
-            q,
-            self.mechanism
+        gas = sdtoolbox.postshock.PostShock_fr(
+            U1=cj_speed,
+            P1=initial_press,
+            T1=initial_temp,
+            q=q,
+            mech=self.mechanism,
+            perturbed_rxn_no=perturbed_reaction,
+            perturbation_fraction=perturbation_fraction,
         )
 
         if perturbed_reaction >= 0:
@@ -286,10 +242,9 @@ class CellSize:
         temp_a = self.Ts * 1.02
         gas.TPX = temp_a, Ps, q
 
-        # cv_out_0 = sd.cv.cvsolve(gas)
+        # cv_out_0 = sdtoolbox.cv.cvsolve(gas)
         cv_out_0 = wrapped_cvsolve(
             gas,
-            sd,
             max_tries_cv,
             cv_end_time,
             max_step_cv
@@ -297,10 +252,9 @@ class CellSize:
 
         temp_b = self.Ts * 0.98
         gas.TPX = temp_b, Ps, q
-        # cv_out_1 = sd.cv.cvsolve(gas, t_end=10e-6)
+        # cv_out_1 = sdtoolbox.cv.cvsolve(gas, t_end=10e-6)
         cv_out_1 = wrapped_cvsolve(
             gas,
-            sd,
             max_tries_cv,
             cv_end_time,
             max_step_cv
@@ -319,12 +273,14 @@ class CellSize:
 
         # Tps should be post-shock temperature at 1.3 Dcj per Gavrikov
         # noinspection PyPep8Naming
-        self.Tps_gav = sd.postshock.PostShock_fr(
-            cj_speed * 1.3,
-            initial_press,
-            initial_temp,
-            q,
-            self.mechanism
+        self.Tps_gav = sdtoolbox.postshock.PostShock_fr(
+            U1=cj_speed * 1.3,
+            P1=initial_press,
+            T1=initial_temp,
+            q=q,
+            mech=self.mechanism,
+            perturbed_rxn_no=perturbed_reaction,
+            perturbation_fraction=perturbation_fraction,
         ).T
         self.gavrikov_criteria = {
             "Ea/RTps": self.activation_energy / ct.gas_constant / self.Tps_gav,

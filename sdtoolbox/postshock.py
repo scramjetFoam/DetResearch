@@ -38,10 +38,12 @@ Tested with:
 Under these operating systems:
     Windows 8.1, Windows 10, Linux (Debian 9)
 """
+from typing import Optional
 
 import cantera as ct
 import numpy as np
-from sdtoolbox.thermo import eq_state,state
+from sdtoolbox.thermo import eq_state, state
+from sdtoolbox import perturbation
 
 def LSQ_CJspeed(x,y):
     """
@@ -266,7 +268,16 @@ def CJ_calc(gas, gas1, ERRFT, ERRFV, x):
     return [gas, w1]
 
 
-def CJspeed(P1, T1, q, mech, fullOutput=False):
+# noinspection PyPep8Naming
+def CJspeed(
+    P1,
+    T1,
+    q,
+    mech,
+    fullOutput=False,
+    perturbed_rxn_no: Optional[int] = None,
+    perturbation_fraction: Optional[float] = None,
+):
     """
     Calculates CJ detonation velocity for a given pressure, temperature, and
     composition.
@@ -297,31 +308,46 @@ def CJspeed(P1, T1, q, mech, fullOutput=False):
                     a,b,c = quadratic fit coefficients
 
     """
-    #DECLARATIONS
-    numsteps = 20; maxv = 2.0; minv = 1.5
-    w1 = np.zeros(numsteps+1,float)
-    rr = np.zeros(numsteps+1,float)
+    # DECLARATIONS
+    numsteps = 20
+    maxv = 2.0
+    minv = 1.5
+    w1 = np.zeros(numsteps + 1, float)
+    rr = np.zeros(numsteps + 1, float)
+
+    # CJ is an equilibrium calc, so reaction rates don't matter
     gas1 = ct.Solution(mech)
-    gas  = ct.Solution(mech)
-    #INTIAL CONDITIONS
-    gas.TPX  = T1, P1, q
+    gas = ct.Solution(mech)
+
+    # INTIAL CONDITIONS
+    gas.TPX = T1, P1, q
     gas1.TPX = T1, P1, q
-    #INITIALIZE ERROR VALUES & CHANGE VALUES
-    ERRFT = 1.0*10**-4;  ERRFV = 1.0*10**-4
-    i = 1
-    T1 = gas1.T; P1 = gas1.P
-    counter = 1; R2 = 0.0; cj_speed = 0.0
-    a = 0.0; b = 0.0; c = 0.0; dnew = 0.0
+
+    # INITIALIZE ERROR VALUES & CHANGE VALUES
+    ERRFT = 1.0*10**-4
+    ERRFV = 1.0*10**-4
+    T1 = gas1.T
+    P1 = gas1.P
+    counter = 1
+    R2 = 0.0
+    cj_speed = 0.0
+    a = 0.0
+    b = 0.0
+    c = 0.0
+    dnew = 0.0
     while (counter <= 4) or (R2 < 0.99999):
-        step = (maxv-minv)/float(numsteps); i = 0; x = minv
+        step = (maxv-minv) / float(numsteps)
+        i = 0
+        x = minv
         while x <= maxv:
             gas.TPX = T1, P1, q
             [gas, temp] = CJ_calc(gas, gas1, ERRFT, ERRFV, x)
             w1[i] = temp
-            rr[i] = gas.density/gas1.density
-            i = i + 1; x = x + step
-        [a,b,c,R2,SSE,SST] = LSQ_CJspeed(rr,w1)
-        dnew = -b/(2.0*a)
+            rr[i] = gas.density / gas1.density
+            i = i + 1
+            x = x + step
+        [a, b, c, R2, _, _] = LSQ_CJspeed(rr, w1)
+        dnew = -b / (2.0*a)
         minv = dnew - dnew*0.001
         maxv = dnew + dnew*0.001
         counter = counter + 1
@@ -329,13 +355,14 @@ def CJspeed(P1, T1, q, mech, fullOutput=False):
     
     if fullOutput:
         # Optional output data for plotting (with sdt.utilities.CJspeed_plot)
-        plot_data = (rr,w1,dnew,a,b,c)        
-        return [cj_speed,R2,plot_data]
+        plot_data = (rr, w1, dnew, a, b, c)
+
+        return [cj_speed, R2, plot_data]
     else:
         return cj_speed
 
 
-def PostShock_fr(U1, P1, T1, q, mech):
+def PostShock_fr(U1, P1, T1, q, mech, perturbed_rxn_no: Optional[int], perturbation_fraction: Optional[float]):
     """
     Calculates frozen post-shock state for a specified shock velocity and pre-shock state.
 
@@ -355,18 +382,22 @@ def PostShock_fr(U1, P1, T1, q, mech):
     """
     # INITIALIZE ERROR VALUES
     from sdtoolbox.config import ERRFT,ERRFV
-    
-    gas1 = ct.Solution(mech)
-    gas  = ct.Solution(mech)
+
+    gas1 = perturbation.perturbed_gas(mech=mech, rxn_no=perturbed_rxn_no, perturbation_fraction=perturbation_fraction)
+    gas = perturbation.perturbed_gas(mech=mech, rxn_no=perturbed_rxn_no, perturbation_fraction=perturbation_fraction)
+
     # INTIAL CONDITIONS
     gas.TPX = T1, P1, q
-    gas1.TPX= T1, P1, q
+    gas1.TPX = T1, P1, q
+
     # CALCULATES POST-SHOCK STATE
     gas = shk_calc(U1, gas, gas1, ERRFT, ERRFV)
+
     return gas
 
 
-def PostShock_eq(U1, P1, T1, q, mech):
+# noinspection PyPep8Naming
+def PostShock_eq(U1, P1, T1, q, mech, perturbed_rxn_no: Optional[int], perturbation_fraction: Optional[float]):
     """
     Calculates equilibrium post-shock state for a specified shock velocity and pre-shock state.
 
@@ -385,21 +416,24 @@ def PostShock_eq(U1, P1, T1, q, mech):
 
     """
     # INITIALIZE ERROR VALUES
-    from sdtoolbox.config import ERRFT,ERRFV
-    
-    gas1 = ct.Solution(mech);
-    gas  = ct.Solution(mech);
+    from sdtoolbox.config import ERRFT, ERRFV
+
+    gas1 = perturbation.perturbed_gas(mech=mech, rxn_no=perturbed_rxn_no, perturbation_fraction=perturbation_fraction)
+    gas = perturbation.perturbed_gas(mech=mech, rxn_no=perturbed_rxn_no, perturbation_fraction=perturbation_fraction)
+
     # INTIAL CONDITIONS    
     # workaround to avoid unsized object error when only one species in a .cti file
     # (flagged to be fixed in future Cantera version)
-    if len(q)>1:
+    if len(q) > 1:
         gas.TPX = T1, P1, q
-        gas1.TPX= T1, P1, q
+        gas1.TPX = T1, P1, q
     else:
         gas.TP = T1, P1
-        gas1.TP= T1, P1
+        gas1.TP = T1, P1
+
     # CALCULATES POST-SHOCK STATE
     gas = shk_eq_calc(U1, gas, gas1, ERRFT, ERRFV)
+
     return gas
 
 
