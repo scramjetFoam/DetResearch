@@ -48,6 +48,19 @@ class TestConditions:
         d = dataclasses.asdict(self)
         return {k.lstrip("_"): v for (k, v) in d.items()}
 
+    def needs_cj_calc(self) -> bool:
+        return self.cj_speed is None
+
+    def needs_cell_size_calc(self) -> bool:
+        return None in (
+            self.ind_len_ng,
+            self.ind_len_gav,
+            self.ind_len_west,
+            self.cell_size_ng,
+            self.cell_size_gav,
+            self.cell_size_west
+        )
+
 
 @dataclasses.dataclass
 class PerturbedResults:
@@ -72,6 +85,12 @@ class PerturbedResults:
     def to_dict(self):
         d = dataclasses.asdict(self)
         return {k: v for (k, v) in d.items()}
+
+
+def _table_exists(cur: sqlite3.Cursor, name: str) -> bool:
+    cur.execute("select name from sqlite_master where type='table' and name=:name", {"name": name})
+
+    return cur.fetchone() is not None
 
 
 class DataBase:  # todo: implement these changes throughout the code base
@@ -113,7 +132,7 @@ class BaseReactionTable:
 
     def __init__(self, con: sqlite3.Connection):
         self.cur = con.cursor()
-        if not self.cur.fetchall():
+        if not _table_exists(self.cur, self.name):
             self._create()
 
     def _create(self):
@@ -181,7 +200,7 @@ class TestConditionsTable:
 
     def __init__(self, con: sqlite3.Connection):
         self.cur = con.cursor()
-        if not self.cur.fetchall():
+        if not _table_exists(self.cur, self.name):
             self._create()
 
     def _create(self):
@@ -354,7 +373,7 @@ class PerturbedResultsTable:
         self._testing = testing
         self._base_rxn_table = base_rxn_table
         self._test_conditions_table = test_conditions_table
-        if not self.cur.fetchall():
+        if not _table_exists(self.cur, self.name):
             self._create()
 
     def _create(self):

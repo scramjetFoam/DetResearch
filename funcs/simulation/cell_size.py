@@ -12,6 +12,8 @@ in the following report:
 This script uses SDToolbox, which can be found at
 http://shepherd.caltech.edu/EDL/PublicResources/sdt/
 """
+import dataclasses
+
 import cantera as ct
 import numpy as np
 
@@ -375,20 +377,18 @@ class CellSize:
         self.chi_ng = self.activation_energy * out['ind_len_ZND'] / \
             (u_cj / max(out['thermicity']))
 
-        self.induction_length = {
-            'Westbrook': t_west*out['U'][0],
-            'Gavrikov': t_gav*out['U'][0],
-            'Ng': out['ind_len_ZND']
-        }
+        self.induction_length = ModelResults(
+            westbrook=t_west*out['U'][0],
+            gavrikov=t_gav*out['U'][0],
+            ng=out['ind_len_ZND']
+        )
 
         # calculate and return cell size results
-        self.cell_size = {
-            'Westbrook': self._cell_size_westbrook(),
-            'Gavrikov': self._cell_size_gavrikov(),
-            'Ng': self._cell_size_ng()
-        }
-
-        return self.cell_size
+        self.cell_size = ModelResults(
+            westbrook=self._cell_size_westbrook(),
+            gavrikov=self._cell_size_gavrikov(),
+            ng=self._cell_size_ng(),
+        )
 
     def _build_gas_object(self):
         gas = ct.Solution(self.mechanism)
@@ -463,7 +463,7 @@ class CellSize:
         chi_pow = np.power(self.chi_ng, range(1, len(a)+1))
         cell_size = (
             a_0 + np.sum(a / chi_pow + b * chi_pow)
-        ) * self.induction_length['Ng']
+        ) * self.induction_length.ng
 
         return cell_size
 
@@ -510,7 +510,7 @@ class CellSize:
             g * np.log(gav_y) + h * np.log(self.activation_energy) +
             gav_y * (i / self.activation_energy - k *
                      gav_y / np.power(self.activation_energy, m)) - j
-        ) * self.induction_length['Gavrikov']
+        ) * self.induction_length.gavrikov
 
         return cell_size
 
@@ -529,4 +529,14 @@ class CellSize:
         cell_size : float
             Estimated cell size (m)
         """
-        return 29 * self.induction_length['Westbrook']
+        return 29 * self.induction_length.westbrook
+
+
+@dataclasses.dataclass(frozen=True)
+class ModelResults:
+    gavrikov: float
+    ng: float
+    westbrook: float
+
+    def values(self) -> np.array:
+        return np.array((self.gavrikov, self.ng, self.westbrook))

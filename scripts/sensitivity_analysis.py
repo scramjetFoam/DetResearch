@@ -6,105 +6,80 @@ from tqdm import tqdm
 import funcs.simulation.sensitivity.detonation.database as db
 # noinspection PyUnresolvedReferences
 from funcs.simulation.sensitivity import istarmap
-from funcs.simulation.sensitivity.detonation.analysis import perform_study, init
-from funcs.simulation.thermo import match_adiabatic_temp
+from funcs.simulation.sensitivity.detonation import analysis
+from funcs.simulation import thermo
 
 if __name__ == '__main__':
     import warnings
     warnings.simplefilter('ignore')
-    # _mechanism = 'Mevel2017.cti'
-    # _mechanism = 'aramco2.cti'
-    _mechanism = "gri30_highT.cti"
-    _initial_temp = 300
-    _initial_press = 101325
-    _equivalence = 1
 
-    _fuel = 'CH4'
-    _oxidizer = 'N2O'
-    # diluent = 'AR'
-    _diluent_to_match = 'CO2'
-    _diluent = "N2"
-    # _diluent = None
-    _diluent_mol_frac_to_match = 0.05
-    _diluent_mol_frac = match_adiabatic_temp(
-        _mechanism,
-        _fuel,
-        _oxidizer,
-        _equivalence,
-        _diluent_to_match,
-        _diluent_mol_frac_to_match,
-        _diluent,
-        _initial_temp,
-        _initial_press
-    )
-
-    # _diluent_mol_frac = 0
-    _perturbation_fraction = 1e-2
+    # Inputs
+    perturbation_fraction = 1e-2
     max_step_znd = 1e-4  # default 1e-4
-    db_name = "sensitivity_2.sqlite"
+    db_path = "sensitivity_3.sqlite"
+    mechanism = "gri30_highT.cti"
+    initial_temp = 300
+    initial_press = 101325
+    equivalence = 1
+    fuel = 'H2'
+    oxidizer = 'O2'
+    diluent_to_match = 'CO2'
+    diluent = "N2"
+    diluent_mol_frac_to_match = 0.05
+    always_overwrite_existing = False
 
-    t = db.Table(
-        db_name,
-        'data'
+    # Preparations
+    if diluent_to_match == diluent:
+        diluent_mol_frac = diluent_mol_frac_to_match
+    else:
+        diluent_mol_frac = thermo.match_adiabatic_temp(
+            mechanism,
+            fuel,
+            oxidizer,
+            equivalence,
+            diluent_to_match,
+            diluent_mol_frac_to_match,
+            diluent,
+            initial_temp,
+            initial_press
+        )
+    print("Initializing study... ", end="", flush=True)
+    test_conditions = analysis.initialize_study(
+        db_path=db_path,
+        test_conditions=db.TestConditions(
+            mechanism=mechanism,
+            initial_temp=initial_temp,
+            initial_press=initial_press,
+            fuel=fuel,
+            oxidizer=oxidizer,
+            equivalence=equivalence,
+            diluent=diluent,
+            diluent_mol_frac=diluent_mol_frac,
+        )
     )
-    exist_check = t.fetch_test_rows(
-        mechanism=_mechanism,
-        initial_temp=_initial_temp,
-        initial_press=_initial_press,
-        fuel=_fuel,
-        oxidizer=_oxidizer,
-        equivalence=_equivalence,
-        diluent=_diluent,
-        diluent_mol_frac=_diluent_mol_frac,
-    )['rxn_table_id']
+    print("Done!")
+    reactions = ct.Reaction().listFromFile(mechanism)
 
-    reactions = ct.Reaction.listFromFile(_mechanism)
-
-    # PARALLEL -- remove _lock to args in cell_size.CellSize
-    # mp.set_start_method("spawn")
+    # Calculations
     _lock = mp.Lock()
     n_rxns = len(reactions)
-    with mp.Pool(initializer=init, initargs=(_lock,)) as p:
+    with mp.Pool(initializer=analysis.init, initargs=(_lock,)) as p:
+        # noinspection PyUnresolvedReferences
         for _ in tqdm(
             p.istarmap(
-                perform_study,
+                analysis.perform_study,
                 [
                     [
-                        _mechanism,
-                        _initial_temp,
-                        _initial_press,
-                        _equivalence,
-                        _fuel,
-                        _oxidizer,
-                        _diluent,
-                        _diluent_mol_frac,
-                        _perturbation_fraction,
-                        i,
-                        db_name,
-                        max_step_znd
-                    ] for i in range(n_rxns)
+                        test_conditions,
+                        perturbation_fraction,
+                        perturbed_rxn_no,
+                        db_path,
+                        max_step_znd,
+                        always_overwrite_existing,
+                    ] for perturbed_rxn_no in range(n_rxns)
                 ]
             ),
-            total=n_rxns,
-            colour="499c54"
+            total=n_rxns
         ):
             pass
-
-    # SERIAL -- add _lock to args in cell_size.CellSize
-    # pbar = tqdm(total=n_rxns)
-    # for i in range(len(reactions)):
-    #     perform_study(
-    #         _mechanism,
-    #         _initial_temp,
-    #         _initial_press,
-    #         _equivalence,
-    #         _fuel,
-    #         _oxidizer,
-    #         _diluent,
-    #         _diluent_mol_frac,
-    #         _perturbation_fraction,
-    #         i,
-    #         _lock
-    #     )
-    #     pbar.update(1)
     print("woo!")
