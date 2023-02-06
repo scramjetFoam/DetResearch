@@ -117,11 +117,11 @@ if __name__ == '__main__':
     gas1.TPX = T1, P1, q
 
     # FIND EQUILIBRIUM POST SHOCK STATE FOR GIVEN SPEED
-    gas = sd.postshock.PostShock_eq(cj_speed, P1, T1, q, mech)
+    gas = sd.postshock.PostShock_eq(cj_speed, P1, T1, q, mech, None, None)
     u_cj = cj_speed * gas1.density / gas.density
 
     # FIND FROZEN POST SHOCK STATE FOR GIVEN SPEED
-    gas = sd.postshock.PostShock_fr(cj_speed, P1, T1, q, mech)
+    gas = sd.postshock.PostShock_fr(cj_speed, P1, T1, q, mech, None, None)
 
     # SOLVE ZND DETONATION ODES
     out = sd.znd.zndsolve(
@@ -134,7 +134,7 @@ if __name__ == '__main__':
 
     # Find CV parameters including effective activation energy
     gas.TPX = T1, P1, q
-    gas = sd.postshock.PostShock_fr(cj_speed, P1, T1, q, mech)
+    gas = sd.postshock.PostShock_fr(cj_speed, P1, T1, q, mech, None, None)
     Ts, Ps = gas.TP
     Ta = Ts * 1.02
     gas.TPX = Ta, Ps, q
