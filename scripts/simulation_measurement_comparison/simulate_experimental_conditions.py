@@ -1,3 +1,4 @@
+import datetime
 import multiprocessing as mp
 import os
 import warnings
@@ -6,9 +7,11 @@ import cantera as ct
 import numpy as np
 import pandas as pd
 import tqdm
-from funcs.simulation import cell_size as sim
 from sdtoolbox.postshock import CJspeed
 from uncertainties import unumpy as unp
+
+from funcs.simulation import cell_size as cs
+from funcs.simulation import thermo
 
 FUEL = "CH4"
 OXIDIZER = "N2O"
@@ -18,7 +21,9 @@ MECH = "gri30.cti"
 def main():
     df_measured = read_in_measured_data()
     df_result = simulate_measured_conditions(df_measured)
-    with pd.HDFStore(os.path.join(os.path.dirname(__file__), "simulated_and_measured.h5"), "w") as store:
+    today = datetime.date.today().isoformat().replace("-", "_")
+    data_file = f"simulated_and_measured_{today}.h5"
+    with pd.HDFStore(os.path.join(os.path.dirname(__file__), data_file), "w") as store:
         store["data"] = df_result
 
 
@@ -95,15 +100,14 @@ def simulate_single_condition(idx_and_row: pd.Series):
             FUEL,
             OXIDIZER
         )
-        q = sim.diluted_species_dict(
+        q = thermo.diluted_species_dict(
             gas.mole_fraction_dict(),
             dil,
             dil_mf
         )
         cj_speed = CJspeed(p_0, t_0, q, MECH)
-        cs = sim.CellSize()
-        simulated = cs(
-            base_mechanism=MECH,
+        simulated = cs.calculate(
+            mechanism=MECH,
             initial_temp=t_0,
             initial_press=p_0,
             fuel=FUEL,
@@ -113,9 +117,10 @@ def simulate_single_condition(idx_and_row: pd.Series):
             diluent_mol_frac=dil_mf,
             cj_speed=cj_speed,
         )
-        row["cell_size_gavrikov"] = simulated["Gavrikov"] * 1000  # m -> mm
-        row["cell_size_ng"] = simulated["Ng"] * 1000  # m -> mm
-        row["cell_size_westbrook"] = simulated["Westbrook"] * 1000  # m -> mm
+        row["cell_size_gavrikov"] = simulated.cell_size.gavrikov * 1000  # m -> mm
+        row["cell_size_ng"] = simulated.cell_size.ng * 1000  # m -> mm
+        row["cell_size_westbrook"] = simulated.cell_size.westbrook * 1000  # m -> mm
+        row["gavrikov_criteria_met"] = simulated.gavrikov_criteria_met
 
     return row
 
