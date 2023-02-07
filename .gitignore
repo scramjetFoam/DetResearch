@@ -248,3 +248,6 @@ box_key.json
 
 # or visio
 *.vsdx
+
+# don't need to commit error logs either
+error_log_*
