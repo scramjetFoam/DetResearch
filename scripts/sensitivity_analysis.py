@@ -1,11 +1,15 @@
+import datetime
 import multiprocessing as mp
+import pprint
+import sys
+import time
+import traceback
+from concurrent import futures
 
 import cantera as ct
 from tqdm import tqdm
 
 import funcs.simulation.sensitivity.detonation.database as db
-# noinspection PyUnresolvedReferences
-from funcs.simulation.sensitivity import istarmap
 from funcs.simulation.sensitivity.detonation import analysis
 from funcs.simulation import thermo
 
@@ -64,23 +68,51 @@ if __name__ == '__main__':
     # Calculations
     _lock = mp.Lock()
     n_rxns = len(reactions)
-    with mp.Pool(initializer=analysis.init, initargs=(_lock,)) as p:
-        # noinspection PyUnresolvedReferences
-        for _ in tqdm(
-            p.istarmap(
-                analysis.perform_study,
-                [
-                    [
-                        test_conditions,
-                        perturbation_fraction,
-                        perturbed_rxn_no,
-                        db_path,
-                        max_step_znd,
-                        overwrite_existing_perturbed_results,
-                    ] for perturbed_rxn_no in range(n_rxns)
-                ]
-            ),
-            total=n_rxns
-        ):
-            pass
-    print("woo!")
+
+    n_errors = 0
+    error_log = f"error_log_{datetime.datetime.now().isoformat()}"
+    with futures.ProcessPoolExecutor(initializer=analysis.init, initargs=(_lock,)) as executor:
+        with tqdm(total=n_rxns, unit="calc", file=sys.stdout, colour="green", desc="Running") as counter:
+            futures = []
+            inputs = []  # track these for exception logs
+            for reaction_number in range(n_rxns):
+                kwargs = dict(
+                    test_conditions=test_conditions,
+                    perturbation_fraction=perturbation_fraction,
+                    perturbed_reaction_no=reaction_number,
+                    db_path=db_path,
+                    max_step_znd=max_step_znd,
+                    overwrite_existing=overwrite_existing_perturbed_results,
+                )
+                future = executor.submit(analysis.perform_study, **kwargs)
+                futures.append(future)
+                inputs.append(kwargs)
+
+            while len(futures):
+                for i, future in enumerate(futures):
+                    if future.done():
+                        # noinspection PyBroadException
+                        try:
+                            # There aren't results, but we try anyway so that we can catch and log any exceptions
+                            # that pop up.
+                            future.result()
+                        except Exception:
+                            with open(error_log, "a") as f:
+                                n_errors += 1
+                                f.write(
+                                    f"Error logged at {datetime.datetime.now().isoformat()}\n"
+                                    "Inputs:\n"
+                                    f"{pprint.pformat(kwargs, indent=4, width=120)}\n\n"
+                                    "Stack Trace:\n"
+                                    f"{traceback.format_exc()}\n==================================================\n\n"
+                                )
+                                f.flush()
+                        inputs.pop(i)
+                        futures.pop(i)
+                        counter.update()
+
+                time.sleep(1.0)
+            counter.set_description_str("Done")
+
+    if n_errors:
+        print(f"Encountered {n_errors} errors -- see f{error_log}")
