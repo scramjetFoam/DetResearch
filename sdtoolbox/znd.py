@@ -236,32 +236,34 @@ def zndsolve(gas,gas1,U1,
         #######################################################
         
         if n == b:
-            print('Error: Maximum thermicity occurs at the end of the reaction zone')
-            print('       You may have an eigenvalue detonation, your final integration length may be too short,')
-            print('       your mixture may be too rich/lean, or something else may be wrong')
-            print(' ')
-            print('Mach Number (end of reaction): '+str(output['M'][b])+' - if close to 1, check for eigenvalue detonation')
-            output['ind_time_ZND'] = output['time'][b]
-            output['ind_len_ZND'] = output['distance'][b] 
-            output['exo_time_ZND'] = 0 
-            output['exo_len_ZND'] = 0 
-            print('Induction Time: '+str(output['ind_time_ZND']))
-            print('Exothermic Pulse Time: '+str(output['exo_time_ZND']))
-            return output
+            raise ValueError(
+                'Error: Maximum thermicity occurs at the end of the reaction zone'
+                '       You may have an eigenvalue detonation, your final integration length may be too short,\n'
+                '       your mixture may be too rich/lean, or something else may be wrong\n'
+                '\n'
+                'Mach Number (end of reaction): '
+                f"{output['M'][b]}"
+                ' - if close to 1, check for eigenvalue detonation\n'
+                'Induction Time: '
+                f"{output['ind_time_ZND']}\n"
+                'Exothermic Pulse Time: '
+                f"{output['exo_time_ZND']}"
+            )
         
         elif n == 0:
-            print('Error: Maximum thermicity occurs at the beginning of the reaction zone')
-            print('       You may have an eigenvalue detonation, your final integration length may be too short,')
-            print('       your mixture may be too rich/lean, or something else may be wrong')
-            print(' ')
-            print('Mach Number (end of reaction): '+str(output['M'][b])+' - if close to 1, check for eigenvalue detonation')
-            output['ind_time_ZND'] = output['time'][0]
-            output['ind_len_ZND'] = output['distance'][0] 
-            output['exo_time_ZND'] = 0 
-            output['exo_len_ZND'] = 0 
-            print('Induction Time: '+str(output['ind_time_ZND']))
-            print('Exothermic Pulse Time: '+str(output['exo_time_ZND']))
-            return output
+            raise ValueError(
+                'Error: Maximum thermicity occurs at the beginning of the reaction zone\n'
+                '       You may have an eigenvalue detonation, your final integration length may be too short,\n'
+                '       your mixture may be too rich/lean, or something else may be wrong\n'
+                '\n'
+                'Mach Number (end of reaction): '
+                f"{output['M'][b]}"
+                ' - if close to 1, check for eigenvalue detonation\n'
+                'Induction Time: '
+                f"{output['ind_time_ZND']}\n"
+                'Exothermic Pulse Time: '
+                f"{output['exo_time_ZND']}"
+            )
         
         else:
             max_sigmadot = max(output['thermicity'])
@@ -281,14 +283,13 @@ def zndsolve(gas,gas1,U1,
                         tstep2 = j
                     else:
                         tstep2 = 0
-                        
-        
+
         if tstep2 == 0:
-            print('Error: No pulse in the thermicity')
-            print('       You may have an eigenvalue detonation, your final integration length may be too short,')
-            print('       your mixture may be too rich/lean, or something else may be wrong') 
-            output['exo_time_ZND'] = 0
-            output['exo_len_ZND'] = 0  
+            raise ValueError(
+                'Error: No pulse in the thermicity\n'
+                '       You may have an eigenvalue detonation, your final integration length may be too short,\n'
+                '       your mixture may be too rich/lean, or something else may be wrong\n'
+            )
         else:
             output['exo_time_ZND'] = output['time'][tstep2] - output['time'][tstep1]; 
             output['exo_len_ZND'] = output['distance'][tstep2] - output['distance'][tstep1]
