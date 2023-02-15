@@ -1,12 +1,16 @@
 import dataclasses
-import multiprocessing as mp
+import datetime
+import sys
+import time
+from concurrent.futures import ProcessPoolExecutor
 import os
+import traceback
 import warnings
 
 import cantera as ct
 import seaborn as sns
 import pandas as pd
-import tqdm
+from tqdm import tqdm
 from matplotlib import pyplot as plt
 from sdtoolbox.postshock import CJspeed
 
@@ -73,46 +77,86 @@ def load_all_data() -> pd.DataFrame:
     return df
 
 
-def simulate_single_condition(idx_and_row: pd.Series):
+def simulate_single_condition(idx_and_row: pd.Series, error_log: str):
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-
+        idx = idx_and_row[0]
         row = idx_and_row[1].copy()
-        phi = row["phi"]
-        fuel = row["fuel"]
-        oxidizer = row["oxidizer"]
-        p_0 = row["pressure"]
-        t_0 = 300  # todo: verify this please
-        gas = ct.Solution(MECH)
-        gas.set_equivalence_ratio(phi, fuel, oxidizer)
-        cj_speed = CJspeed(p_0, t_0, gas.mole_fraction_dict(), MECH)
-        _simulated = cs.calculate(
-            mechanism=MECH,
-            initial_temp=t_0,
-            initial_press=p_0,
-            fuel=fuel,
-            oxidizer=oxidizer,
-            equivalence=phi,
-            diluent=None,
-            diluent_mol_frac=0,
-            cj_speed=cj_speed,
-        )
-        row["cell_size_gavrikov"] = _simulated.cell_size.gavrikov * 1000  # m -> mm
-        row["cell_size_ng"] = _simulated.cell_size.ng * 1000  # m -> mm
-        row["cell_size_westbrook"] = _simulated.cell_size.westbrook * 1000  # m -> mm
-        row["gavrikov_criteria_met"] = _simulated.gavrikov_criteria_met
+        try:
+            phi = row["phi"]
+            fuel = row["fuel"]
+            oxidizer = row["oxidizer"]
+            p_0 = row["pressure"]
+            t_0 = 300  # todo: verify this please
+            gas = ct.Solution(MECH)
+            gas.set_equivalence_ratio(phi, fuel, oxidizer)
+            cj_speed = CJspeed(p_0, t_0, gas.mole_fraction_dict(), MECH)
 
-    return row
+            # guess at simulation parameters using measured cell sizes
+            # convert cell size to meters, then guess double the westbrook estimate for induction length
+            ind_len_estimate = row["cell_size"] / 1000 / (29 / 2)
+            cv_end_time = ind_len_estimate / cj_speed
+            approx_n_steps = 20
+
+            _simulated = cs.calculate(
+                mechanism=MECH,
+                initial_temp=t_0,
+                initial_press=p_0,
+                fuel=fuel,
+                oxidizer=oxidizer,
+                equivalence=phi,
+                diluent=None,
+                diluent_mol_frac=0,
+                cj_speed=cj_speed,
+                max_step_znd=ind_len_estimate / approx_n_steps,
+                cv_end_time=cv_end_time,
+                max_step_cv=cv_end_time / approx_n_steps,
+            )
+            row["cell_size_gavrikov"] = _simulated.cell_size.gavrikov * 1000  # m -> mm
+            row["cell_size_ng"] = _simulated.cell_size.ng * 1000  # m -> mm
+            row["cell_size_westbrook"] = _simulated.cell_size.westbrook * 1000  # m -> mm
+            row["gavrikov_criteria_met"] = _simulated.gavrikov_criteria_met
+        except Exception as e:
+            with open(error_log, "a") as f:
+                f.write(
+                    f"Caught exception: {e}\n\n"
+                    f"Fuel {fuel}\n"
+                    f"Oxidizer: {oxidizer}\n"
+                    f"Initial pressure: {p_0} Pa\n\n"
+                    f"{traceback.format_exc()}"
+                    "================\n\n"
+                )
+                f.flush()
+
+    return idx, row
 
 
-def simulate_measured_conditions(df_measured: pd.DataFrame):  # todo: error handling!
-    with mp.Pool(maxtasksperchild=1) as p:
-        # noinspection PyTypeChecker
-        df_result = pd.DataFrame(
-            tqdm.tqdm(p.imap(simulate_single_condition, df_measured.iterrows()), total=len(df_measured))
-        )
+def simulate_measured_conditions(df_measured: pd.DataFrame) -> pd.DataFrame:
+    n_meas = len(df_measured)
+    error_log = f"error_log_{datetime.datetime.now().isoformat()}"
+    with ProcessPoolExecutor() as executor:
+        with tqdm(total=n_meas, unit="calc", file=sys.stdout, colour="green", desc="Running") as counter:
+            futures = []
+            results = []
+            for idx_and_row in df_measured.iterrows():
+                future = executor.submit(simulate_single_condition, idx_and_row=idx_and_row, error_log=error_log)
+                futures.append(future)
 
-    return df_result.sort_index()
+            while len(futures):
+                for i, future in enumerate(futures):
+                    if future.done():
+                        futures.pop(i)
+                        results.append(future.result())
+                        counter.update()
+
+                time.sleep(1.0)
+            counter.set_description_str("Done")
+
+    df_out = pd.DataFrame()
+    for result in sorted(results):
+        df_out = pd.concat((df_out, result[1]), axis=1)
+
+    return df_out
 
 
 if __name__ == "__main__":
