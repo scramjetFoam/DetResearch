@@ -22,11 +22,28 @@ import sdtoolbox
 from .thermo import diluted_species_dict
 
 
+@dataclasses.dataclass(frozen=True)
+class ZndResult:
+    induction_length: float
+    max_thermicity: float
+    velocity: float
+
+
+@dataclasses.dataclass(frozen=True)
+class CvResult:
+    induction_time: float
+    limit_species_mole_fraction: Optional[np.ndarray]
+    temperature: Optional[np.ndarray]
+    time: Optional[np.ndarray]
+
+
 def wrapped_cvsolve(
     gas,
+    limit_species_idx: int,
     max_tries=10,
     t_end=1e-6,
     max_step=1e-5,
+    induction_time_only: bool = False,
 ):
     """
     Look jack, I don't have time for your `breaking` malarkey
@@ -38,12 +55,14 @@ def wrapped_cvsolve(
     ----------
     gas : ct.Solution
         gas object to work on
+    limit_species_idx : Index of limit species in Solution object
     max_tries : int
         how motivated are you
     t_end : float
         initial end time, which is doubled each iteration
     max_step : float
         maximum cvsolve step time
+    induction_time_only : Everything else is None
 
     Returns
     -------
@@ -70,7 +89,21 @@ def wrapped_cvsolve(
         else:
             # let it break if it's gonna break after max tries
             out = sdtoolbox.cv.cvsolve(gas, t_end=t_end, max_step=max_step)
-    return out
+
+    if induction_time_only:
+        return CvResult(
+            induction_time=out["ind_time"],
+            limit_species_mole_fraction=None,
+            temperature=None,
+            time=None,
+        )
+    else:
+        return CvResult(
+            induction_time=out["ind_time"],
+            limit_species_mole_fraction=out["speciesX"][limit_species_idx],
+            temperature=out["T"],
+            time=out["time"],
+        )
 
 
 def wrapped_zndsolve(
@@ -114,7 +147,11 @@ def wrapped_zndsolve(
                 t_end=t_end,
                 max_step=max_step
             )
-    return out
+    return ZndResult(
+        induction_length=out["ind_len_ZND"],
+        max_thermicity=out["thermicity"].max(),
+        velocity=out["U"][0],
+    )
 
 
 @dataclasses.dataclass(frozen=True)
@@ -193,7 +230,7 @@ def calculate(
     )
 
     # SOLVE ZND DETONATION ODES
-    out = wrapped_zndsolve(
+    znd_result = wrapped_zndsolve(
         gas=gas,
         base_gas=base_gas,
         cj_speed=cj_speed,
@@ -217,12 +254,21 @@ def calculate(
     temp_a = temp_vn * 1.02
     gas.TPX = temp_a, press_vn, q
 
+    #  Gather limiting species and index -- fuel for lean mixtures, oxygen for rich mixtures
+    if equivalence <= 1:
+        limit_species = fuel
+    else:
+        limit_species = 'O2'
+    limit_species_idx = gas.species_index(limit_species)
+
     # cv_out_0 = sdtoolbox.cv.cvsolve(gas)
     cv_out_0 = wrapped_cvsolve(
         gas,
+        limit_species_idx,
         max_tries_cv,
         cv_end_time,
-        max_step_cv
+        max_step_cv,
+        induction_time_only=False,
     )
 
     temp_b = temp_vn * 0.98
@@ -230,14 +276,16 @@ def calculate(
     # cv_out_1 = sdtoolbox.cv.cvsolve(gas, t_end=10e-6)
     cv_out_1 = wrapped_cvsolve(
         gas,
+        limit_species_idx,
         max_tries_cv,
         cv_end_time,
-        max_step_cv
+        max_step_cv,
+        induction_time_only=True,
     )
 
     # Approximate effective activation energy for CV explosion
-    tau_a = cv_out_0['ind_time']
-    tau_b = cv_out_1['ind_time']
+    tau_a = cv_out_0.induction_time
+    tau_b = cv_out_1.induction_time
     if tau_a == 0 or tau_b == 0:
         activation_energy = 0
     else:
@@ -267,11 +315,6 @@ def calculate(
 
     #  Find Gavrikov induction time based on 50% limiting species
     #  consumption, fuel for lean mixtures, oxygen for rich mixtures
-    if equivalence <= 1:
-        limit_species = fuel
-    else:
-        limit_species = 'O2'
-    limit_species_loc = gas.species_index(limit_species)
     gas.TPX = temp_vn, press_vn, q
     try:
         mf_initial = gas.mole_fraction_dict()[limit_species]
@@ -281,32 +324,20 @@ def calculate(
     mf_final = gas.mole_fraction_dict()[limit_species]
     temp_final = gas.T
     mf_gav = 0.5*(mf_initial - mf_final) + mf_final
-    t_gav = np.nanmax(
-        np.concatenate([
-            cv_out_0['time'][
-                cv_out_0['speciesX'][limit_species_loc] > mf_gav
-            ],
-            [0]
-        ])
-    )
+    t_gav = np.nanmax(cv_out_0.time[cv_out_0.limit_species_mole_fraction > mf_gav], initial=0)
 
     #  Westbrook time based on 50% temperature rise
     temp_west = 0.5*(temp_final - temp_vn) + temp_vn
-    t_west = np.nanmax(
-        np.concatenate([
-            cv_out_0['time'][cv_out_0['T'] < temp_west],
-            [0]
-        ])
-    )
+    t_west = np.nanmax(cv_out_0.time[cv_out_0.temperature < temp_west], initial=0)
 
     # Ng et al definition of max thermicity width
     # Equation 2
-    chi_ng = activation_energy * out['ind_len_ZND'] / (cj_speed_density_corrected / max(out['thermicity']))
+    chi_ng = activation_energy * znd_result.induction_length / (cj_speed_density_corrected / znd_result.max_thermicity)
 
     induction_length = ModelResults(
-        westbrook=t_west*out['U'][0],
-        gavrikov=t_gav*out['U'][0],
-        ng=out['ind_len_ZND']
+        westbrook=t_west*znd_result.velocity,
+        gavrikov=t_gav*znd_result.velocity,
+        ng=znd_result.induction_length,
     )
 
     # calculate and return cell size results
