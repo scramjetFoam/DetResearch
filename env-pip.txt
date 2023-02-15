@@ -1,4 +1,0 @@
-pytest
-pytest-cov
-tables
-PyQt5
