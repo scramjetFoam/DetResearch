@@ -1,9 +1,12 @@
+import concurrent.futures
 import dataclasses
 import datetime
+import gc
 import sys
 import time
 from concurrent.futures import ProcessPoolExecutor
 import os
+import psutil
 import traceback
 import warnings
 
@@ -133,24 +136,33 @@ def simulate_single_condition(idx_and_row: pd.Series, error_log: str):
 
 def simulate_measured_conditions(df_measured: pd.DataFrame) -> pd.DataFrame:
     n_meas = len(df_measured)
-    error_log = f"error_log_{datetime.datetime.now().isoformat()}"
-    with ProcessPoolExecutor() as executor:
-        with tqdm(total=n_meas, unit="calc", file=sys.stdout, colour="green", desc="Running") as counter:
-            futures = []
-            results = []
-            for idx_and_row in df_measured.iterrows():
-                future = executor.submit(simulate_single_condition, idx_and_row=idx_and_row, error_log=error_log)
-                futures.append(future)
+    start = datetime.datetime.now().isoformat()
+    error_log = f"error_log_{start}"
+    mem_log_file = f"mem_log{start}"
+    with open(mem_log_file, "w") as memlog:
+        memlog.write("datetime,ram_used_gb\n")
 
-            while len(futures):
-                for i, future in enumerate(futures):
-                    if future.done():
-                        futures.pop(i)
-                        results.append(future.result())
-                        counter.update()
+        with ProcessPoolExecutor(max_workers=2) as executor:
+            with tqdm(total=n_meas, unit="calc", file=sys.stdout, colour="green", desc="Running") as counter:
+                futures = {
+                    idx_and_row[0]:
+                        executor.submit(simulate_single_condition, idx_and_row=idx_and_row, error_log=error_log)
+                    for idx_and_row in df_measured.iterrows()
+                }
+                results = []
 
-                time.sleep(1.0)
-            counter.set_description_str("Done")
+                while len(futures):
+                    memlog.write(f"{datetime.datetime.now().isoformat()},{psutil.virtual_memory().used/1e9}\n")
+                    memlog.flush()
+                    for future_key, future in futures.items():
+                        if future.done():
+                            results.append(future.result())
+                            futures.pop(future_key)
+                            counter.update()
+                            gc.collect()
+
+                    time.sleep(1.0)
+                counter.set_description_str("Done")
 
     df_out = pd.DataFrame()
     for result in sorted(results):
@@ -165,16 +177,16 @@ if __name__ == "__main__":
     print(f"loaded {len(data)} data points from literature")
 
     simulated = simulate_measured_conditions(data)
-    with pd.HDFStore(os.path.join(DATA_DIR, "westbrook_validation.h5"), "w") as store:
-        store["data"] = simulated
-
-    grid = sns.relplot(x="pressure", y="cell_size", style="mixture", data=simulated, kind="scatter")
-    grid.set(xscale="log", yscale="log")
-    for ax in grid.axes[0]:
-        ax.invert_xaxis()
-
-    grid = sns.relplot(x="pressure", y="cell_size_westbrook", style="mixture", data=simulated, kind="scatter")
-    grid.set(xscale="log", yscale="log")
-    for ax in grid.axes[0]:
-        ax.invert_xaxis()
-    plt.show()
+    # with pd.HDFStore(os.path.join(DATA_DIR, "westbrook_validation.h5"), "w") as store:
+    #     store["data"] = simulated
+    #
+    # grid = sns.relplot(x="pressure", y="cell_size", style="mixture", data=simulated, kind="scatter")
+    # grid.set(xscale="log", yscale="log")
+    # for ax in grid.axes[0]:
+    #     ax.invert_xaxis()
+    #
+    # grid = sns.relplot(x="pressure", y="cell_size_westbrook", style="mixture", data=simulated, kind="scatter")
+    # grid.set(xscale="log", yscale="log")
+    # for ax in grid.axes[0]:
+    #     ax.invert_xaxis()
+    # plt.show()
