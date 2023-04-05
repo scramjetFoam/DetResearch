@@ -1,12 +1,12 @@
 import concurrent.futures
 import dataclasses
 import datetime
-import gc
 import sys
 import time
 from concurrent.futures import ProcessPoolExecutor
 import os
-import psutil
+from typing import Tuple
+
 import traceback
 import warnings
 
@@ -80,7 +80,7 @@ def load_all_data() -> pd.DataFrame:
     return df
 
 
-def simulate_single_condition(idx_and_row: pd.Series, error_log: str):
+def simulate_single_condition(idx_and_row: Tuple[int, pd.Series], error_log: str):
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         idx = idx_and_row[0]
@@ -99,7 +99,7 @@ def simulate_single_condition(idx_and_row: pd.Series, error_log: str):
             # convert cell size to meters, then guess double the westbrook estimate for induction length
             ind_len_estimate = row["cell_size"] / 1000 / (29 / 2)
             cv_end_time = ind_len_estimate / cj_speed
-            approx_n_steps = 20
+            min_n_steps = 20
 
             _simulated = cs.calculate(
                 mechanism=MECH,
@@ -111,9 +111,9 @@ def simulate_single_condition(idx_and_row: pd.Series, error_log: str):
                 diluent=None,
                 diluent_mol_frac=0,
                 cj_speed=cj_speed,
-                max_step_znd=ind_len_estimate / approx_n_steps,
+                max_step_znd=ind_len_estimate / min_n_steps,
                 cv_end_time=cv_end_time,
-                max_step_cv=cv_end_time / approx_n_steps,
+                max_step_cv=cv_end_time / min_n_steps,
             )
             row["cell_size_gavrikov"] = _simulated.cell_size.gavrikov * 1000  # m -> mm
             row["cell_size_ng"] = _simulated.cell_size.ng * 1000  # m -> mm
@@ -138,35 +138,24 @@ def simulate_measured_conditions(df_measured: pd.DataFrame) -> pd.DataFrame:
     n_meas = len(df_measured)
     start = datetime.datetime.now().isoformat()
     error_log = f"error_log_{start}"
-    mem_log_file = f"mem_log{start}"
-    with open(mem_log_file, "w") as memlog:
-        memlog.write("datetime,ram_used_gb\n")
 
-        with ProcessPoolExecutor(max_workers=2) as executor:
-            with tqdm(total=n_meas, unit="calc", file=sys.stdout, colour="green", desc="Running") as counter:
-                futures = {
-                    idx_and_row[0]:
-                        executor.submit(simulate_single_condition, idx_and_row=idx_and_row, error_log=error_log)
-                    for idx_and_row in df_measured.iterrows()
-                }
-                results = []
+    with ProcessPoolExecutor() as executor:
+        with tqdm(total=n_meas, unit="calc", file=sys.stdout, colour="green", desc="Running") as counter:
+            futures = {
+                executor.submit(simulate_single_condition, idx_and_row=idx_and_row, error_log=error_log)
+                for idx_and_row in df_measured.iterrows()
+            }
+            results = []
 
-                while len(futures):
-                    memlog.write(f"{datetime.datetime.now().isoformat()},{psutil.virtual_memory().used/1e9}\n")
-                    memlog.flush()
-                    for future_key, future in futures.items():
-                        if future.done():
-                            results.append(future.result())
-                            futures.pop(future_key)
-                            counter.update()
-                            gc.collect()
+            for done in concurrent.futures.as_completed(futures):
+                results.append(done.result())
+                counter.update()
 
-                    time.sleep(1.0)
-                counter.set_description_str("Done")
+            counter.set_description_str("Done")
 
     df_out = pd.DataFrame()
-    for result in sorted(results):
-        df_out = pd.concat((df_out, result[1]), axis=1)
+    for result in sorted(results, key=lambda r: r[0]):
+        df_out = pd.concat((df_out, result[1].to_frame().T))
 
     return df_out
 
@@ -174,19 +163,39 @@ def simulate_measured_conditions(df_measured: pd.DataFrame) -> pd.DataFrame:
 if __name__ == "__main__":
     data = load_all_data()
 
-    print(f"loaded {len(data)} data points from literature")
+    print(f"\nloaded {len(data)} data points from literature\n")
 
     simulated = simulate_measured_conditions(data)
-    # with pd.HDFStore(os.path.join(DATA_DIR, "westbrook_validation.h5"), "w") as store:
-    #     store["data"] = simulated
-    #
-    # grid = sns.relplot(x="pressure", y="cell_size", style="mixture", data=simulated, kind="scatter")
-    # grid.set(xscale="log", yscale="log")
-    # for ax in grid.axes[0]:
-    #     ax.invert_xaxis()
-    #
-    # grid = sns.relplot(x="pressure", y="cell_size_westbrook", style="mixture", data=simulated, kind="scatter")
-    # grid.set(xscale="log", yscale="log")
-    # for ax in grid.axes[0]:
-    #     ax.invert_xaxis()
-    # plt.show()
+    simulated["pressure"] = pd.to_numeric(simulated["pressure"])
+    simulated["cell_size"] = pd.to_numeric(simulated["cell_size"])
+    simulated["phi"] = pd.to_numeric(simulated["phi"])
+    simulated["cell_size_gavrikov"] = pd.to_numeric(simulated["cell_size_gavrikov"])
+    simulated["cell_size_ng"] = pd.to_numeric(simulated["cell_size_ng"])
+    simulated["cell_size_westbrook"] = pd.to_numeric(simulated["cell_size_westbrook"])
+
+    with pd.HDFStore(os.path.join(DATA_DIR, "westbrook_validation.h5"), "w") as store:
+        with warnings.catch_warnings():
+            # pandas doesn't do types well here, and frankly I'm sick of hearing about it
+            warnings.simplefilter("ignore")
+            store["data"] = simulated
+
+    plot_data = pd.DataFrame()
+    for (_, row) in simulated.iterrows():
+        plot_data = pd.concat([
+            plot_data,
+            pd.DataFrame({
+                "mixture": [row["mixture"]] * 2,
+                "fuel": [row["fuel"]] * 2,
+                "oxidizer": [row["oxidizer"]] * 2,
+                "phi": [row["phi"]] * 2,
+                "pressure": [row["pressure"]] * 2,
+                "cell_size": [row["cell_size"], row["cell_size_westbrook"]],
+                "source": ["literature", "simulation"]
+            })
+        ])
+
+    grid = sns.relplot(x="pressure", y="cell_size", style="source", row="mixture", data=plot_data, kind="scatter")
+    grid.set(xscale="log", yscale="log")
+    for ax in grid.axes[0]:
+        ax.invert_xaxis()
+    plt.show()
