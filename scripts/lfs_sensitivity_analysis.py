@@ -53,7 +53,6 @@ if __name__ == "__main__":
                         oxidizer,
                         dil,
                         dil_mf,
-                        inert=None,
                         use_multiprocessing=use_multiprocessing,
                         n_cores=n_cores
                     )
@@ -70,7 +69,6 @@ if __name__ == "__main__":
                     oxidizer,
                     dil,
                     0,  # undiluted mixture has no dil_mf :)
-                    inert=None,
                     use_multiprocessing=use_multiprocessing,
                 )
                 df_new = combine_results(df_new, ser_info_new)

@@ -1,3 +1,5 @@
+import dataclasses
+
 import sdtoolbox as sd
 
 from ... import cell_size
@@ -5,297 +7,195 @@ from ..gas import build as build_gas
 from . import database as db
 
 
-def check_stored_base_cj_speed(
-        table,
-        mechanism,
-        initial_temp,
-        initial_press,
-        fuel,
-        oxidizer,
-        equivalence,
-        diluent,
-        diluent_mol_frac,
-        inert,
-):
-    current_data = table.fetch_test_rows(
-            mechanism=mechanism,
-            initial_temp=initial_temp,
-            initial_press=initial_press,
-            fuel=fuel,
-            oxidizer=oxidizer,
-            equivalence=equivalence,
-            diluent=diluent,
-            diluent_mol_frac=diluent_mol_frac,
-            inert=inert
-    )
-    return len(current_data['cj_speed']) == 1
+def initialize_study(db_path: str, test_conditions: db.TestConditions, max_step_znd: float) -> db.TestConditions:
+    """
+    Creates a new row and performs CJ speed calculations, both as needed, and returns updated TestConditions
+    """
+    database = db.DataBase(path=db_path)
+    if test_conditions.test_id is None:
+        test_conditions = database.new_test(test_conditions=test_conditions)
+    else:
+        # in case we don't want to recalculate CJ speed
+        test_conditions = database.test_conditions_table.fetch_row(test_conditions.test_id)
 
+    if test_conditions.needs_cj_calc():
+        gas = build_gas(
+            test_conditions.mechanism,
+            test_conditions.initial_temp,
+            test_conditions.initial_press,
+            test_conditions.equivalence,
+            test_conditions.fuel,
+            test_conditions.oxidizer,
+            test_conditions.diluent,
+            test_conditions.diluent_mol_frac,
+        )
+        test_conditions.cj_speed = sd.postshock.CJspeed(
+            P1=test_conditions.initial_press,
+            T1=test_conditions.initial_temp,
+            q=gas.mole_fraction_dict(),
+            mech=test_conditions.mechanism,
+        )
+        database.test_conditions_table.update_row(test_conditions=test_conditions)
 
-def check_stored_base_calcs(
-        table,
-        mechanism,
-        initial_temp,
-        initial_press,
-        fuel,
-        oxidizer,
-        equivalence,
-        diluent,
-        diluent_mol_frac,
-        inert,
-):
-    current_data = table.fetch_test_rows(
-            mechanism=mechanism,
-            initial_temp=initial_temp,
-            initial_press=initial_press,
-            fuel=fuel,
-            oxidizer=oxidizer,
-            equivalence=equivalence,
-            diluent=diluent,
-            diluent_mol_frac=diluent_mol_frac,
-            inert=inert
-    )
-    return all([
-        current_data['ind_len_west'][0] > 0,
-        current_data['ind_len_gav'][0] > 0,
-        current_data['ind_len_ng'][0] > 0,
-        current_data['cell_size_west'][0] > 0,
-        current_data['cell_size_gav'][0] > 0,
-        current_data['cell_size_ng'][0] > 0,
-    ])
+    # This is the base cell size, which is used for all sensitivity calculations and is therefore required before any
+    # further cell size calculations occur.
+    if test_conditions.needs_cell_size_calc():
+        base_cell_calcs = cell_size.calculate(
+            mechanism=test_conditions.mechanism,
+            cj_speed=test_conditions.cj_speed,
+            initial_temp=test_conditions.initial_temp,
+            initial_press=test_conditions.initial_press,
+            fuel=test_conditions.fuel,
+            oxidizer=test_conditions.oxidizer,
+            equivalence=test_conditions.equivalence,
+            diluent=test_conditions.diluent,
+            diluent_mol_frac=test_conditions.diluent_mol_frac,
+            max_step_znd=max_step_znd,
+        )
+        test_conditions.ind_len_gav = base_cell_calcs.induction_length.gavrikov
+        test_conditions.ind_len_ng = base_cell_calcs.induction_length.ng
+        test_conditions.ind_len_west = base_cell_calcs.induction_length.westbrook
+        test_conditions.cell_size_gav = base_cell_calcs.cell_size.gavrikov
+        test_conditions.cell_size_ng = base_cell_calcs.cell_size.ng
+        test_conditions.cell_size_west = base_cell_calcs.cell_size.westbrook
+        database.test_conditions_table.update_row(test_conditions=test_conditions)
+
+    return test_conditions
 
 
 def perform_study(
-        mech,
-        init_temp,
-        init_press,
-        equivalence,
-        fuel,
-        oxidizer,
-        diluent,
-        diluent_mol_frac,
-        inert,
-        perturbation_fraction,
-        perturbed_reaction_no,
-        db_name,
-        max_step_znd,
-        # db_lock
+    test_conditions: db.TestConditions,
+    perturbation_fraction: float,
+    perturbed_reaction_no: int,
+    db_path: str,
+    max_step_znd: float,
+    overwrite_existing: bool,
 ):
-    cs = cell_size.CellSize()
-    gas = build_gas(
-        mech,
-        init_temp,
-        init_press,
-        equivalence,
-        fuel,
-        oxidizer,
-        diluent,
-        diluent_mol_frac,
-        inert,
-    )
-    table_name = 'data'
-    current_table = db.Table(
-        database=db_name,
-        table_name=table_name
+    database = db.DataBase(path=db_path)
+    overwrite_existing = overwrite_existing
 
-    )
+    # I could definitely be doing a much better job of cache invalidation, but more than anything I want this to run,
+    # and this isn't exactly production code so... meh.
+    if test_conditions.test_id is None:
+        raise ValueError("TestConditions must be initiated prior to study initiation")
+    elif not database.test_conditions_table.test_exists(test_id=test_conditions.test_id):
+        raise db.DatabaseError(f"Test conditions were given for a nonexistent row: {test_conditions}")
 
-    with db_lock:
-        # check for stored cj speed
-        stored_cj = check_stored_base_cj_speed(
-            table=current_table,
-            mechanism=mech,
-            initial_temp=init_temp,
-            initial_press=init_press,
-            fuel=fuel,
-            oxidizer=oxidizer,
-            equivalence=equivalence,
-            diluent=diluent,
-            diluent_mol_frac=diluent_mol_frac,
-            inert=inert
+    if overwrite_existing:
+        # calculate, then overwrite or insert
+        perturbed_results = calculate_perturbed_cell_size_and_sensitivity(
+            base_test_conditions=test_conditions,
+            perturbed_reaction_no=perturbed_reaction_no,
+            max_step_znd=max_step_znd,
+            perturbation_fraction=perturbation_fraction,
         )
-        if not stored_cj:
-            # calculate and store cj speed
-            cj_speed = sd.postshock.CJspeed(
-                P1=init_press,
-                T1=init_temp,
-                q=gas.mole_fraction_dict(),
-                mech=mech
-            )
-            rxn_table_id = current_table.store_test_row(
-                mechanism=mech,
-                initial_temp=init_temp,
-                initial_press=init_press,
-                fuel=fuel,
-                oxidizer=oxidizer,
-                equivalence=equivalence,
-                diluent=diluent,
-                diluent_mol_frac=diluent_mol_frac,
-                inert=inert,
-                cj_speed=cj_speed,
-                ind_len_west=0,
-                ind_len_gav=0,
-                ind_len_ng=0,
-                cell_size_west=0,
-                cell_size_gav=0,
-                cell_size_ng=0,
-                overwrite_existing=False
-            )
+        if database.perturbed_results_table.row_exists(test_conditions.test_id, perturbed_reaction_no):
+            database.perturbed_results_table.update_row(perturbed_results)
         else:
-            # stored cj speed exists
-            current_data = current_table.fetch_test_rows(
-                mechanism=mech,
-                initial_temp=init_temp,
-                initial_press=init_press,
-                fuel=fuel,
-                oxidizer=oxidizer,
-                equivalence=equivalence,
-                diluent=diluent,
-                diluent_mol_frac=diluent_mol_frac,
-                inert=inert
-            )
-            [rxn_table_id] = current_data['rxn_table_id']
-            [cj_speed] = current_data['cj_speed']
-            del current_data
-        del stored_cj
-
-        # check for stored base reaction data
-        stored_rxns = current_table.check_for_stored_base_data(rxn_table_id)
-        if not stored_rxns:
-            current_table.store_base_rxn_table(
-                rxn_table_id=rxn_table_id,
-                gas=gas
-                )
-        del stored_rxns
-
-        stored_base_calcs = check_stored_base_calcs(
-            table=current_table,
-            mechanism=mech,
-            initial_temp=init_temp,
-            initial_press=init_press,
-            fuel=fuel,
-            oxidizer=oxidizer,
-            equivalence=equivalence,
-            diluent=diluent,
-            diluent_mol_frac=diluent_mol_frac,
-            inert=inert
-        )
-        if not stored_base_calcs:
-            # calculate base cell size
-            base_cell_calcs = cs(
-                base_mechanism=mech,
-                cj_speed=cj_speed,
-                initial_temp=init_temp,
-                initial_press=init_press,
-                fuel=fuel,
-                oxidizer=oxidizer,
-                equivalence=equivalence,
-                diluent=diluent,
-                diluent_mol_frac=diluent_mol_frac,
-                inert=inert,
+            database.perturbed_results_table.insert_new_row(perturbed_results)
+    else:
+        if not database.perturbed_results_table.row_exists(test_conditions.test_id, perturbed_reaction_no):
+            perturbed_results = calculate_perturbed_cell_size_and_sensitivity(
+                base_test_conditions=test_conditions,
+                perturbed_reaction_no=perturbed_reaction_no,
                 max_step_znd=max_step_znd,
+                perturbation_fraction=perturbation_fraction,
             )
-            base_ind_len = cs.induction_length
-            current_table.store_test_row(
-                mechanism=mech,
-                initial_temp=init_temp,
-                initial_press=init_press,
-                fuel=fuel,
-                oxidizer=oxidizer,
-                equivalence=equivalence,
-                diluent=diluent,
-                diluent_mol_frac=diluent_mol_frac,
-                inert=inert,
-                cj_speed=cj_speed,
-                ind_len_west=base_ind_len['Westbrook'],
-                ind_len_gav=base_ind_len['Gavrikov'],
-                ind_len_ng=base_ind_len['Ng'],
-                cell_size_west=base_cell_calcs['Westbrook'],
-                cell_size_gav=base_cell_calcs['Gavrikov'],
-                cell_size_ng=base_cell_calcs['Ng'],
-                overwrite_existing=True
-            )
-        else:
-            # look up base calcs from db
-            current_data = current_table.fetch_test_rows(
-                mechanism=mech,
-                initial_temp=init_temp,
-                initial_press=init_press,
-                fuel=fuel,
-                oxidizer=oxidizer,
-                equivalence=equivalence,
-                diluent=diluent,
-                diluent_mol_frac=diluent_mol_frac,
-                inert=inert
-            )
-            base_ind_len = {
-                'Westbrook': current_data['ind_len_west'][0],
-                'Gavrikov': current_data['ind_len_gav'][0],
-                'Ng': current_data['ind_len_ng'][0],
-            }
-            base_cell_calcs = {
-                'Westbrook': current_data['cell_size_west'][0],
-                'Gavrikov': current_data['cell_size_gav'][0],
-                'Ng': current_data['cell_size_ng'][0],
-            }
-            del current_data
-        del stored_base_calcs
+            database.perturbed_results_table.insert_new_row(perturbed_results)
 
-    # calculate perturbed cell size
-    pert_cell_calcs = cs(
-        base_mechanism=mech,
-        cj_speed=cj_speed,
-        initial_temp=init_temp,
-        initial_press=init_press,
-        fuel=fuel,
-        oxidizer=oxidizer,
-        equivalence=equivalence,
-        diluent=diluent,
-        diluent_mol_frac=diluent_mol_frac,
-        inert=inert,
+
+@dataclasses.dataclass(frozen=True)
+class SensitivityResults:
+    induction_length: cell_size.ModelResults
+    cell_size: cell_size.ModelResults
+
+
+def calculate_sensitivities(
+    base_test_conditions: db.TestConditions,
+    perturbed_results: cell_size.CellSizeResults,
+    perturbation_fraction: float,
+):
+    def calculate_sensitivity(base: float, perturbed: float):
+        return (perturbed - base) / (base * perturbation_fraction)
+
+    return SensitivityResults(
+        induction_length=cell_size.ModelResults(
+            gavrikov=calculate_sensitivity(
+                base=base_test_conditions.cell_size_gav,
+                perturbed=perturbed_results.cell_size.gavrikov,
+            ),
+            ng=calculate_sensitivity(
+                base=base_test_conditions.cell_size_ng,
+                perturbed=perturbed_results.cell_size.ng,
+            ),
+            westbrook=calculate_sensitivity(
+                base=base_test_conditions.cell_size_west,
+                perturbed=perturbed_results.cell_size.westbrook,
+            ),
+        ),
+        cell_size=cell_size.ModelResults(
+            gavrikov=calculate_sensitivity(
+                base=base_test_conditions.ind_len_gav,
+                perturbed=perturbed_results.induction_length.gavrikov,
+            ),
+            ng=calculate_sensitivity(
+                base=base_test_conditions.ind_len_ng,
+                perturbed=perturbed_results.induction_length.ng,
+            ),
+            westbrook=calculate_sensitivity(
+                base=base_test_conditions.ind_len_west,
+                perturbed=perturbed_results.induction_length.westbrook,
+            ),
+        ),
+    )
+
+
+def calculate_perturbed_cell_size_and_sensitivity(
+    base_test_conditions: db.TestConditions,
+    perturbed_reaction_no: int,
+    max_step_znd: float,
+    perturbation_fraction: float
+) -> db.PerturbedResults:
+    if perturbed_reaction_no is None:
+        raise ValueError("Cannot calculate perturbed cell sizes with perturbed_reaction = None")
+
+    pert_cell_calcs = cell_size.calculate(
+        mechanism=base_test_conditions.mechanism,
+        cj_speed=base_test_conditions.cj_speed,
+        initial_temp=base_test_conditions.initial_temp,
+        initial_press=base_test_conditions.initial_press,
+        fuel=base_test_conditions.fuel,
+        oxidizer=base_test_conditions.oxidizer,
+        equivalence=base_test_conditions.equivalence,
+        diluent=base_test_conditions.diluent,
+        diluent_mol_frac=base_test_conditions.diluent_mol_frac,
         perturbed_reaction=perturbed_reaction_no,
         max_step_znd=max_step_znd,
     )
-    pert_ind_len = cs.induction_length
+    sensitivity = calculate_sensitivities(
+        base_test_conditions=base_test_conditions,
+        perturbed_results=pert_cell_calcs,
+        perturbation_fraction=perturbation_fraction,
+    )
 
-    # calculate sensitivities
-    sens_ind_len_west = (pert_ind_len['Westbrook'] -
-                         base_ind_len['Westbrook']) / \
-                        (base_ind_len['Westbrook'] * perturbation_fraction)
-    sens_cell_size_west = (pert_cell_calcs['Westbrook'] -
-                           base_cell_calcs['Westbrook']) / \
-                          (base_cell_calcs['Westbrook'] * perturbation_fraction)
-    sens_ind_len_gav = (pert_ind_len['Gavrikov'] -
-                        base_ind_len['Gavrikov']) / \
-                       (base_ind_len['Gavrikov'] * perturbation_fraction)
-    sens_cell_size_gav = (pert_cell_calcs['Gavrikov'] -
-                          base_cell_calcs['Gavrikov']) / \
-                         (base_cell_calcs['Gavrikov'] * perturbation_fraction)
-    sens_ind_len_ng = (pert_ind_len['Ng'] -
-                       base_ind_len['Ng']) / \
-                      (base_ind_len['Ng'] * perturbation_fraction)
-    sens_cell_size_ng = (pert_cell_calcs['Ng'] -
-                         base_cell_calcs['Ng']) / \
-                        (base_cell_calcs['Ng'] * perturbation_fraction)
-
-    with db_lock:
-        current_table.store_perturbed_row(
-            rxn_table_id=rxn_table_id,
+    return db.PerturbedResults(
+            test_id=base_test_conditions.test_id,
             rxn_no=perturbed_reaction_no,
-            rxn=cs.base_gas.reaction_equation(perturbed_reaction_no),
-            k_i=cs.base_gas.forward_rate_constants[perturbed_reaction_no],
-            ind_len_west=pert_ind_len['Westbrook'],
-            ind_len_gav=pert_ind_len['Gavrikov'],
-            ind_len_ng=pert_ind_len['Ng'],
-            cell_size_west=pert_cell_calcs['Westbrook'],
-            cell_size_gav=pert_cell_calcs['Gavrikov'],
-            cell_size_ng=pert_cell_calcs['Ng'],
-            sens_ind_len_west=sens_ind_len_west,
-            sens_ind_len_gav=sens_ind_len_gav,
-            sens_ind_len_ng=sens_ind_len_ng,
-            sens_cell_size_west=sens_cell_size_west,
-            sens_cell_size_gav=sens_cell_size_gav,
-            sens_cell_size_ng=sens_cell_size_ng,
-            overwrite_existing=True
+            perturbation_fraction=perturbation_fraction,
+            rxn=pert_cell_calcs.reaction_equation,  # won't be None if perturbed_reaction_no is not None
+            k_i=pert_cell_calcs.k_i,  # won't be None if perturbed_reaction_no is not None
+            ind_len_west=pert_cell_calcs.induction_length.westbrook,
+            ind_len_gav=pert_cell_calcs.induction_length.gavrikov,
+            ind_len_ng=pert_cell_calcs.induction_length.ng,
+            cell_size_west=pert_cell_calcs.cell_size.westbrook,
+            cell_size_gav=pert_cell_calcs.cell_size.gavrikov,
+            cell_size_ng=pert_cell_calcs.cell_size.ng,
+            sens_ind_len_west=sensitivity.induction_length.westbrook,
+            sens_ind_len_gav=sensitivity.induction_length.gavrikov,
+            sens_ind_len_ng=sensitivity.induction_length.ng,
+            sens_cell_size_west=sensitivity.cell_size.westbrook,
+            sens_cell_size_gav=sensitivity.cell_size.gavrikov,
+            sens_cell_size_ng=sensitivity.cell_size.ng,
         )
 
 

@@ -117,57 +117,6 @@ class TestDilutedSpeciesDict:
         )
 
 
-class TestEnforceSpeciesList:
-    def test_good_inputs(self):
-        test_inputs = [
-            'asdf',
-            ['asdf', 'ghjk'],
-            'ASDF',
-            ['ASDF', 'GHJK']
-        ]
-        good_results = [['ASDF'], ['ASDF', 'GHJK']] * 2
-
-        checks = []
-        for current_input, good in zip(test_inputs, good_results):
-            # noinspection PyProtectedMember
-            checks.append(
-                thermo._enforce_species_list(current_input) == good
-            )
-
-        assert all(checks)
-
-    @pytest.mark.parametrize(
-        'test_input',
-        [None, [None, None], 1, [0, 1, 2]]
-    )
-    def test_bad_input(self, test_input):
-        if isinstance(test_input, list):
-            current_type = [type(item) for item in test_input]
-        else:
-            current_type = type(test_input)
-        try:
-            # noinspection PyProtectedMember
-            thermo._enforce_species_list(test_input)
-        except TypeError as err:
-            assert str(err) == 'Bad species type: %s' % current_type
-
-
-def test_solution_with_inerts():
-    mechanism = 'gri30.cti'
-    inert = 'O'
-    known_gas = thermo.ORIGINAL_SOLUTION(mechanism)
-    remaining_reactions = known_gas.n_reactions - sum(
-        [inert in rxn.reactants or inert in rxn.products for
-         rxn in known_gas.reactions()]
-    )
-
-    test_gas = thermo.solution_with_inerts(mechanism, inert)
-    # use len(forward_rate_constants) rather than n_reactions because an
-    # improperly built gas object will throw an error on forward_rate_constants
-    # but not n_reactions
-    assert len(test_gas.forward_rate_constants) == remaining_reactions
-
-
 class TestGetFASt:
     def test_single_species_oxidizer(self):
         assert np.isclose(thermo.get_f_a_st("H2", "O2"), 2)
@@ -216,42 +165,42 @@ def test_match_adiabatic_temp():
     mech = "gri30.cti"
     fuel = "H2"
     oxidizer = "O2"
-    dil_active = "CO2"
-    dil_inert = "AR"
+    dil_original = "CO2"
+    dil_new = "AR"
     phi = 1
-    dil_mf_active = 0.1
+    dil_mf_original = 0.1
     t_0 = 300
     p_0 = 101325
-    dil_mf_inert = thermo.match_adiabatic_temp(
+    dil_mf_new = thermo.match_adiabatic_temp(
         mech,
         fuel,
         oxidizer,
         phi,
-        dil_active,
-        dil_mf_active,
-        dil_inert,
+        dil_original,
+        dil_mf_original,
+        dil_new,
         t_0,
         p_0,
     )
-    t_ad_active = thermo.get_adiabatic_temp(
+    t_ad_original = thermo.get_adiabatic_temp(
         mech,
         fuel,
         oxidizer,
         phi,
-        dil_active,
-        dil_mf_active,
+        dil_original,
+        dil_mf_original,
         t_0,
         p_0
     )
-    t_ad_inert = thermo.get_adiabatic_temp(
+    t_ad_new = thermo.get_adiabatic_temp(
         mech,
         fuel,
         oxidizer,
         phi,
-        dil_inert,
-        dil_mf_inert,
+        dil_new,
+        dil_mf_new,
         t_0,
         p_0
     )
-    assert np.isclose(t_ad_active, t_ad_inert)
+    assert np.isclose(t_ad_original, t_ad_new)
 

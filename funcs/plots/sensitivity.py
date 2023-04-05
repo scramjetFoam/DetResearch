@@ -97,7 +97,7 @@ def sensitivity_plot(
         database,
         table_name
     )
-    imported_data = table.fetch_pert_table(
+    imported_data = table.fetch_rows(
         rxn_table_id=table_id
     )
     df = pd.DataFrame(imported_data)

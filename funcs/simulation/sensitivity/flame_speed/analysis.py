@@ -19,7 +19,6 @@ def calculate_flame_speed(
         oxidizer,
         diluent,
         diluent_mol_frac,
-        inert,
         perturbation_fraction,
         perturbed_reaction_no=-1,
 ):
@@ -32,7 +31,6 @@ def calculate_flame_speed(
         oxidizer,
         diluent,
         diluent_mol_frac,
-        inert,
     )
     if perturbed_reaction_no > 0:
         gas.set_multiplier(1 + perturbation_fraction, perturbed_reaction_no)
@@ -48,7 +46,6 @@ def _run_with_mp(
         oxidizer,
         diluent,
         diluent_mol_frac,
-        inert,
         perturbation_fraction,
         df_result,
         n_cores,
@@ -67,7 +64,6 @@ def _run_with_mp(
                         oxidizer,
                         diluent,
                         diluent_mol_frac,
-                        inert,
                         perturbation_fraction,
                         rxn_no,
                     ]
@@ -89,7 +85,6 @@ def _run_without_mp(
         oxidizer,
         diluent,
         diluent_mol_frac,
-        inert,
         perturbation_fraction,
         df_result,
         _,  # n_cores not used
@@ -104,7 +99,6 @@ def _run_without_mp(
             oxidizer,
             diluent,
             diluent_mol_frac,
-            inert,
             perturbation_fraction,
             idx,
         )
@@ -121,7 +115,6 @@ def perform_study(
         oxidizer,
         diluent,
         diluent_mol_frac,
-        inert=None,
         perturbation_fraction=1e-2,
         use_multiprocessing=False,
         n_cores=None
@@ -149,7 +142,6 @@ def perform_study(
         oxidizer,
         diluent,
         diluent_mol_frac,
-        inert,
         perturbation_fraction,
         df_result,
         n_cores
