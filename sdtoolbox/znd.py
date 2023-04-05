@@ -264,42 +264,42 @@ def zndsolve(gas,gas1,U1,
                 'Exothermic Pulse Time: '
                 f"{output['exo_time_ZND']}"
             )
-        
-        else:
-            max_sigmadot = max(output['thermicity'])
-            half_sigmadot_flag1 = 0
-            half_sigmadot_flag2 = 0
-            # Go into a loop to find two times when sigma_dot is half its maximum
-            tstep2 = 0 # JML temporary
-            for j,thermicity in enumerate(list(output['thermicity'])):
-                if half_sigmadot_flag1 == 0:
-                    if thermicity > 0.5*max_sigmadot:
-                        half_sigmadot_flag1 = 1
-                        tstep1 = j
-                        
-                elif half_sigmadot_flag2 == 0:
-                    if thermicity < 0.5*max_sigmadot:
-                        half_sigmadot_flag2 = 1
-                        tstep2 = j
-                    else:
-                        tstep2 = 0
 
-        if tstep2 == 0:
-            raise ValueError(
-                'Error: No pulse in the thermicity\n'
-                '       You may have an eigenvalue detonation, your final integration length may be too short,\n'
-                '       your mixture may be too rich/lean, or something else may be wrong\n'
-            )
-        else:
-            output['exo_time_ZND'] = output['time'][tstep2] - output['time'][tstep1]; 
-            output['exo_len_ZND'] = output['distance'][tstep2] - output['distance'][tstep1]
+        # I don't care about exo time or len
+        # else:
+        #     max_sigmadot = max(output['thermicity'])
+        #     half_sigmadot_flag1 = 0
+        #     half_sigmadot_flag2 = 0
+        #     # Go into a loop to find two times when sigma_dot is half its maximum
+        #     tstep2 = 0 # JML temporary
+        #     for j,thermicity in enumerate(list(output['thermicity'])):
+        #         if half_sigmadot_flag1 == 0:
+        #             if thermicity > 0.5*max_sigmadot:
+        #                 half_sigmadot_flag1 = 1
+        #                 tstep1 = j
+        #
+        #         elif half_sigmadot_flag2 == 0:
+        #             if thermicity < 0.5*max_sigmadot:
+        #                 half_sigmadot_flag2 = 1
+        #                 tstep2 = j
+        #             else:
+        #                 tstep2 = 0
+        #
+        # if tstep2 == 0:
+        #     raise ValueError(
+        #         'Error: No pulse in the thermicity\n'
+        #         '       You may have an eigenvalue detonation, your final integration length may be too short,\n'
+        #         '       your mixture may be too rich/lean, or something else may be wrong\n'
+        #     )
+        # else:
+        #     output['exo_time_ZND'] = output['time'][tstep2] - output['time'][tstep1];
+        #     output['exo_len_ZND'] = output['distance'][tstep2] - output['distance'][tstep1]
         
     
     #################################################################
     # Append extra data used to make output file (via znd_fileout)
     output['gas1'] = gas1
     output['U1'] = U1
-                    
     
     return output
     
