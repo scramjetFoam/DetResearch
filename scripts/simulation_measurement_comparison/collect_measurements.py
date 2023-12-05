@@ -1,3 +1,4 @@
+import datetime as dt
 import dataclasses
 import multiprocessing as mp
 import os
@@ -167,5 +168,6 @@ def main(output_location: str):
 
 if __name__ == "__main__":
     # todo: get simulation results and add those in as well
-    final_data_loc = os.path.join(os.path.dirname(__file__), "measurements.h5")
+    today = dt.date.today().isoformat()
+    final_data_loc = os.path.join(os.path.dirname(__file__), f"measurements_{today}.h5")
     main(final_data_loc)
