@@ -204,6 +204,24 @@ class CellSizeResults:
     reaction_equation: str
     k_i: float
 
+    @staticmethod
+    def empty():
+        return CellSizeResults(
+            cell_size=ModelResults(
+                gavrikov=np.NaN,
+                ng=np.NaN,
+                westbrook=np.NaN
+            ),
+            induction_length=ModelResults(
+                gavrikov=np.NaN,
+                ng=np.NaN,
+                westbrook=np.NaN
+            ),
+            gavrikov_criteria_met=False,
+            reaction_equation="",
+            k_i=np.NaN
+        )
+
 
 def calculate(
     mechanism: str,

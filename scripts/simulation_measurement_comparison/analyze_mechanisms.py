@@ -6,7 +6,6 @@ import warnings
 from multiprocessing import Lock, Pool
 import os.path
 import time
-from dataclasses import dataclass
 from enum import Enum
 from typing import Optional, Tuple, List, Any, Dict, Callable
 
@@ -16,8 +15,8 @@ import pandas as pd
 import tqdm
 from sdtoolbox.postshock import CJspeed
 
-from funcs.simulation.sensitivity.istarmap import istarmap  # noqa: F401
-from funcs.simulation.cell_size import CellSize
+from funcs.simulation.sensitivity.Fistarmap import istarmap  # noqa: F401
+from funcs.simulation import cell_size
 from funcs.simulation import thermo
 
 
@@ -238,7 +237,7 @@ def calculate_all_new(getter_func: Callable, diluent_mol_fracs: Tuple[float, ...
     pool.join()
 
 
-def init(l):
+def init(l):  # noqa: E741
     global lock
     lock = l
 
@@ -402,10 +401,9 @@ def _simulate_cell_sizes(
     # noinspection PyBroadException
     try:
         t0 = time.time()
-        cs = CellSize()
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            cs(
+            cell_sizes = cell_size.calculate(
                 mech.value,
                 InitialConditions.t0,
                 InitialConditions.p0,
@@ -417,19 +415,18 @@ def _simulate_cell_sizes(
                 cj_speed,
             )
         t1 = time.time()
-        cell_sizes = cs.cell_size
         dt = t1 - t0
     except Exception:
-        cell_sizes = {}
+        cell_sizes = cell_size.CellSizeResults.empty()
         dt = np.NaN
 
-    gavrikov = cell_sizes.get("Gavrikov", np.NaN)
-    ng = cell_sizes.get("Ng", np.NaN)
-    westbrook = cell_sizes.get("Westbrook", np.NaN)
+    gavrikov = cell_sizes.cell_size.gavrikov
+    ng = cell_sizes.cell_size.ng
+    westbrook = cell_sizes.cell_size.westbrook
     updates = [
-        DataUpdate(DataColumn.gavrikov, cell_sizes.get("Gavrikov", np.NaN)),
-        DataUpdate(DataColumn.ng, cell_sizes.get("Ng", np.NaN)),
-        DataUpdate(DataColumn.westbrook, cell_sizes.get("Westbrook", np.NaN)),
+        DataUpdate(DataColumn.gavrikov, gavrikov),
+        DataUpdate(DataColumn.ng, ng),
+        DataUpdate(DataColumn.westbrook, westbrook),
         DataUpdate(DataColumn.cell_size_time, dt)
     ]
     update_results(mech, diluent, actual_dil_mf, co2e_dil_mf, updates)
@@ -437,7 +434,7 @@ def _simulate_cell_sizes(
     return gavrikov, ng, westbrook
 
 
-if __name__ == "__main__":
+def main():
     Mechanism.validate_all()
     # Mechanism.validate_all_cantera_mechanisms()
     # print(get_cj_speed(Mechanism.GRI3HighT, Diluent.NONE, 0.0))
@@ -447,3 +444,7 @@ if __name__ == "__main__":
         df = store["data"]
     pd.set_option("display.max_columns", None)
     print(df)
+
+
+if __name__ == "__main__":
+    main()
