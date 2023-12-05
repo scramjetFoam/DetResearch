@@ -17,8 +17,8 @@ from typing import Optional
 
 import cantera as ct
 import numpy as np
-import sdtoolbox
 
+import sdtoolbox
 from .thermo import diluted_species_dict
 
 
@@ -44,6 +44,10 @@ def wrapped_cvsolve(
     t_end=1e-6,
     max_step=1e-5,
     induction_time_only: bool = False,
+    rxn_indices: Optional[list[int]] = None,
+    spec_indices: Optional[list[int]] = None,
+    db: Optional[sdtoolbox.output.SimulationDatabase] = None,
+    batch_threshold: int = 10_000,
 ):
     """
     Look jack, I don't have time for your `breaking` malarkey
@@ -81,14 +85,30 @@ def wrapped_cvsolve(
             # this exception is broad on purpose.
             # noinspection PyBroadException
             try:
-                out = sdtoolbox.cv.cvsolve(gas, t_end=t_end, max_step=max_step)
+                out = sdtoolbox.cv.cvsolve(
+                    gas,
+                    t_end=t_end,
+                    max_step=max_step,
+                    rxn_indices=rxn_indices,
+                    spec_indices=spec_indices,
+                    db=db,
+                    batch_threshold=batch_threshold,
+                )
                 break
             except:  # noqa: E722
                 t_end *= 2
                 max_step *= 2
         else:
             # let it break if it's gonna break after max tries
-            out = sdtoolbox.cv.cvsolve(gas, t_end=t_end, max_step=max_step)
+            out = sdtoolbox.cv.cvsolve(
+                gas,
+                t_end=t_end,
+                max_step=max_step,
+                rxn_indices=rxn_indices,
+                spec_indices=spec_indices,
+                db=db,
+                batch_threshold=batch_threshold,
+            )
 
     if induction_time_only:
         return CvResult(
@@ -112,7 +132,11 @@ def wrapped_zndsolve(
     cj_speed,
     t_end,
     max_step,
-    max_tries=5
+    max_tries=5,
+    rxn_indices: Optional[list[int]] = None,
+    spec_indices: Optional[list[int]] = None,
+    db: Optional[sdtoolbox.output.SimulationDatabase] = None,
+    batch_threshold: int = 10_000,
 ):
     tries = 0
     init_tpx = gas.TPX
@@ -132,7 +156,11 @@ def wrapped_zndsolve(
                     cj_speed,
                     advanced_output=True,
                     t_end=t_end,
-                    max_step=max_step
+                    max_step=max_step,
+                    rxn_indices=rxn_indices,
+                    spec_indices=spec_indices,
+                    db=db,
+                    batch_threshold=batch_threshold,
                 )
                 break
             except (ct.CanteraError, ValueError):
@@ -145,7 +173,11 @@ def wrapped_zndsolve(
                 cj_speed,
                 advanced_output=True,
                 t_end=t_end,
-                max_step=max_step
+                max_step=max_step,
+                rxn_indices=rxn_indices,
+                spec_indices=spec_indices,
+                db=db,
+                batch_threshold=batch_threshold,
             )
     return ZndResult(
         induction_length=out["ind_len_ZND"],
@@ -362,6 +394,138 @@ def calculate(
         cell_size=cell_size,
         induction_length=induction_length,
         gavrikov_criteria_met=gavrikov_criteria_met,
+        reaction_equation=reaction_equation,
+        k_i=k_i,
+    )
+
+
+def calculate_westbrook_only(
+    mechanism: str,
+    initial_temp: float,
+    initial_press: float,
+    fuel: str,
+    oxidizer: str,
+    equivalence: float,
+    diluent: Optional[str],
+    diluent_mol_frac: float,
+    cj_speed: float,
+    perturbed_reaction: Optional[float] = None,
+    perturbation_fraction: float = 1e-2,
+    max_tries_znd: int = 10,
+    max_step_znd: float = 1e-4,
+    max_tries_cv: int = 15,
+    cv_end_time: float = 1e-6,
+    max_step_cv: float = 5e-7,
+    rxn_indices: Optional[list[int]] = None,
+    spec_indices: Optional[list[int]] = None,
+    db: Optional[sdtoolbox.output.SimulationDatabase] = None,
+    batch_threshold: int = 10_000,
+) -> CellSizeResults:
+    base_gas = _build_gas_object(
+        mechanism=mechanism,
+        equivalence=equivalence,
+        fuel=fuel,
+        oxidizer=oxidizer,
+        diluent=diluent,
+        diluent_mol_frac=diluent_mol_frac,
+        initial_temp=initial_temp,
+        initial_press=initial_press,
+        perturbed_reaction=perturbed_reaction,
+        perturbation_fraction=perturbation_fraction,
+    )
+    q = base_gas.X
+
+    # FIND FROZEN POST SHOCK STATE FOR GIVEN SPEED
+    gas = sdtoolbox.postshock.PostShock_fr(
+        U1=cj_speed,
+        P1=initial_press,
+        T1=initial_temp,
+        q=q,
+        mech=mechanism,
+        perturbed_rxn_no=perturbed_reaction,
+        perturbation_fraction=perturbation_fraction,
+    )
+
+    # SOLVE ZND DETONATION ODES
+    znd_result = wrapped_zndsolve(
+        gas=gas,
+        base_gas=base_gas,
+        cj_speed=cj_speed,
+        t_end=2e-3,
+        max_step=max_step_znd,
+        max_tries=max_tries_znd,
+        rxn_indices=rxn_indices,
+        spec_indices=spec_indices,
+        db=db,
+        batch_threshold=batch_threshold,
+    )
+
+    # Find CV parameters including effective activation energy
+    gas.TPX = initial_temp, initial_press, q
+    gas = sdtoolbox.postshock.PostShock_fr(
+        U1=cj_speed,
+        P1=initial_press,
+        T1=initial_temp,
+        q=q,
+        mech=mechanism,
+        perturbed_rxn_no=perturbed_reaction,
+        perturbation_fraction=perturbation_fraction,
+    )
+    temp_vn, press_vn = gas.TP
+    temp_a = temp_vn * 1.02
+    gas.TPX = temp_a, press_vn, q
+
+    #  Gather limiting species and index -- fuel for lean mixtures, oxygen for rich mixtures
+    if equivalence <= 1:
+        limit_species = fuel
+    else:
+        limit_species = 'O2'
+    limit_species_idx = gas.species_index(limit_species)
+
+    cv_out_0 = wrapped_cvsolve(
+        gas,
+        limit_species_idx,
+        max_tries_cv,
+        cv_end_time,
+        max_step_cv,
+        induction_time_only=False,
+        rxn_indices=rxn_indices,
+        spec_indices=spec_indices,
+        db=db,
+        batch_threshold=batch_threshold,
+    )
+
+    gas.TPX = temp_vn, press_vn, q
+    gas.equilibrate('UV')
+    temp_final = gas.T
+
+    #  Westbrook time based on 50% temperature rise
+    temp_west = 0.5*(temp_final - temp_vn) + temp_vn
+    t_west = np.nanmax(cv_out_0.time[cv_out_0.temperature < temp_west], initial=0)
+
+    induction_length = ModelResults(
+        westbrook=t_west*znd_result.velocity,
+        gavrikov=np.NaN,
+        ng=np.NaN,
+    )
+
+    # calculate and return cell size results
+    cell_size = ModelResults(
+        westbrook=_cell_size_westbrook(induction_length=induction_length.westbrook),
+        gavrikov=np.NaN,
+        ng=np.NaN,
+    )
+
+    if perturbed_reaction is None:
+        reaction_equation = None
+        k_i = None
+    else:
+        reaction_equation = base_gas.reaction_equation(perturbed_reaction)
+        k_i = base_gas.forward_rate_constants[perturbed_reaction]
+    return CellSizeResults(
+        cell_size=cell_size,
+        induction_length=induction_length,
+        gavrikov_criteria_met=False,
         reaction_equation=reaction_equation,
         k_i=k_i,
     )
