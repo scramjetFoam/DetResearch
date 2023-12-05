@@ -362,7 +362,15 @@ def CJspeed(
         return cj_speed
 
 
-def PostShock_fr(U1, P1, T1, q, mech, perturbed_rxn_no: Optional[int], perturbation_fraction: Optional[float]):
+def PostShock_fr(
+    U1,
+    P1,
+    T1,
+    q,
+    mech,
+    perturbed_rxn_no: Optional[int] = None,
+    perturbation_fraction: Optional[float] = None,
+):
     """
     Calculates frozen post-shock state for a specified shock velocity and pre-shock state.
 
@@ -397,7 +405,15 @@ def PostShock_fr(U1, P1, T1, q, mech, perturbed_rxn_no: Optional[int], perturbat
 
 
 # noinspection PyPep8Naming
-def PostShock_eq(U1, P1, T1, q, mech, perturbed_rxn_no: Optional[int], perturbation_fraction: Optional[float]):
+def PostShock_eq(
+    U1,
+    P1,
+    T1,
+    q,
+    mech,
+    perturbed_rxn_no: Optional[int] = None,
+    perturbation_fraction: Optional[float] = None,
+):
     """
     Calculates equilibrium post-shock state for a specified shock velocity and pre-shock state.
 

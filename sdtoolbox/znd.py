@@ -34,18 +34,65 @@ Tested with:
 Under these operating systems:
     Windows 8.1, Windows 10, Linux (Debian 9)
 """
+from typing import Optional
+
 import cantera as ct
 import numpy as np
+from scipy.integrate._ivp.ivp import OdeResult
+
 from sdtoolbox.thermo import soundspeed_fr
 from scipy.integrate import solve_ivp
+from sdtoolbox.output import SimulationDatabase, ReactionData, SpeciesData
+
 
 class ZNDSys(object):
-    def __init__(self,gas,U1,r1):
+    def __init__(
+        self,
+        gas: ct.Solution,
+        U1: float,
+        r1: float,
+        rxn_indices: Optional[list[int]] = None,
+        spec_indices: Optional[list[int]] = None,
+        db: Optional[SimulationDatabase] = None,
+        batch_threshold: int = 10_000,
+    ):
         self.gas = gas
         self.U1 = U1
         self.r1 = r1
-        
-    def __call__(self,t,y):        
+        self.rxn_indices = rxn_indices
+        self.spec_indices = spec_indices
+        self.db = db
+        self.rxn_to_store = []
+        self.spec_to_store = []
+        self.batch_threshold = batch_threshold
+        self.can_store_reaction_data = None not in (self.rxn_indices, self.db) and len(self.rxn_indices) > 0
+        self.can_store_species_data = None not in (self.spec_indices, self.db) and len(self.spec_indices) > 0
+
+    def __del__(self):
+        if self.can_store_reaction_data and len(self.rxn_to_store) > 0:
+            self.store_all_rxn_data()
+
+        if self.can_store_species_data and len(self.spec_to_store) > 0:
+            self.store_all_spec_data()
+
+        if self.db is not None:
+            self.db.reactions.cur.connection.close()
+            self.db.species.cur.connection.close()
+            self.db.conditions.cur.close()
+
+    def store_all_rxn_data(self):
+        for data in self.rxn_to_store:
+            self.db.reactions.insert(data, commit=False)
+        self.db.reactions.cur.connection.commit()
+        self.rxn_to_store.clear()
+
+    def store_all_spec_data(self):
+        for data in self.spec_to_store:
+            self.db.species.insert(data, commit=False)
+        self.db.species.cur.connection.commit()
+        self.spec_to_store.clear()
+
+    def __call__(self, t, y):
         """
         Set of ODEs to solve ZND Detonation Problem.
     
@@ -62,7 +109,7 @@ class ZNDSys(object):
             formatted in a way that the integrator in zndsolve can recognize.
             
         """
-        self.gas.DPY = y[1],y[0],y[3:]
+        self.gas.DPY = y[1], y[0], y[3:]
         c = soundspeed_fr(self.gas)
         U = self.U1*self.r1/self.gas.density
         M = U/c
@@ -72,7 +119,37 @@ class ZNDSys(object):
         Pdot = -self.gas.density*U**2*sigmadot/eta
         rdot = -self.gas.density*sigmadot/eta
         
-        dYdt = self.gas.net_production_rates*self.gas.molecular_weights/self.gas.density    
+        dYdt = self.gas.net_production_rates*self.gas.molecular_weights/self.gas.density
+
+        if self.can_store_reaction_data:
+            for i in self.rxn_indices:
+                data = ReactionData(
+                    condition_id=self.db.conditions_id,
+                    time=t,
+                    reaction=self.gas.reaction_equation(i),
+                    fwd_rate_constant=self.gas.forward_rate_constants[i],
+                    fwd_rate_of_progress=self.gas.forward_rates_of_progress[i],
+                )
+                self.rxn_to_store.append(data)
+
+            if len(self.rxn_to_store) >= self.batch_threshold:
+                self.store_all_rxn_data()
+
+        if self.can_store_species_data:
+            for j in self.spec_indices:
+                species = self.gas.species(j)
+                data = SpeciesData(
+                    condition_id=self.db.conditions_id,
+                    time=t,
+                    species=species,
+                    mole_frac=self.gas.mole_fraction_dict().get(species, 0),
+                    concentration=self.gas.concentrations[j],
+                    creation_rate=self.gas.creation_rates[j],
+                )
+                self.spec_to_store.append(data)
+
+            if len(self.spec_to_store) >= self.batch_threshold:
+                self.store_all_spec_data()
     
         return np.hstack((Pdot, rdot, U, dYdt))
 
@@ -101,10 +178,21 @@ def getThermicity(gas):
     return thermicity
 
 
-def zndsolve(gas,gas1,U1,
-             t_end=1e-3,max_step=1e-4,t_eval=None,
-             relTol=1e-5,absTol=1e-8,
-             advanced_output=False):
+def zndsolve(
+    gas,
+    gas1,
+    U1,
+    t_end=1e-3,
+    max_step=1e-4,
+    t_eval=None,
+    relTol=1e-5,
+    absTol=1e-8,
+    advanced_output=False,
+    rxn_indices: Optional[list[int]] = None,
+    spec_indices: Optional[list[int]] = None,
+    db: Optional[SimulationDatabase] = None,
+    batch_threshold: int = 10_000,
+):
     """
     ZND Model Detonation Struction Computation
     Solves the set of ODEs defined in ZNDSys.
@@ -165,20 +253,29 @@ def zndsolve(gas,gas1,U1,
     r1 = gas1.density
 
     x_start = 0.
-    y0 = np.hstack((gas.P,gas.density,x_start,gas.Y))
+    y0 = np.hstack((gas.P, gas.density, x_start, gas.Y))
 
-    tel = [0.,t_end] # Timespan
+    tel = [0., t_end]  # Timespan
     
-    output = {}   
-    
-    out = solve_ivp(ZNDSys(gas, U1, r1),tel,y0,method='Radau',
-                    atol=absTol,rtol=relTol,max_step=max_step,t_eval=t_eval)       
+    output = {}
+
+    # noinspection PyTypeChecker
+    out: OdeResult = solve_ivp(
+        ZNDSys(gas, U1, r1, rxn_indices, spec_indices, db, batch_threshold),
+        tel,
+        y0,
+        method='Radau',
+        atol=absTol,
+        rtol=relTol,
+        max_step=max_step,
+        t_eval=t_eval,
+    )
     
     output['time'] = out.t    
-    output['P'] = out.y[0,:]
-    output['rho'] = out.y[1,:]
-    output['distance'] = out.y[2,:]
-    output['species'] = out.y[3:,:]
+    output['P'] = out.y[0, :]
+    output['rho'] = out.y[1, ]
+    output['distance'] = out.y[2, :]
+    output['species'] = out.y[3:, :]
     
     output['tfinal'] = t_end
     output['xfinal'] = output['distance'][-1]
@@ -196,16 +293,15 @@ def zndsolve(gas,gas1,U1,
         output['ind_time_ZND'] = 0
         output['exo_len_ZND'] = 0
         output['exo_time_ZND'] = 0
-    
-    
+
     #############################################################################
     # Extract TEMPERATURE, WEIGHT, GAMMA, SOUND SPEED, VELOCITY, MACH NUMBER, 
     # c^2-U^2, THERMICITY, and TEMPERATURE GRADIENT
     #############################################################################
     
     # Have to loop for operations involving the working gas object
-    for i,P in enumerate(output['P']):
-        gas.DPY = output['rho'][i],P,output['species'][:,i]
+    for i, P in enumerate(output['P']):
+        gas.DPY = output['rho'][i], P, output['species'][:, i]
         af = soundspeed_fr(gas)
         U = U1*r1/gas.density
        
