@@ -2,6 +2,8 @@ import cantera as ct
 import numpy as np
 from scipy.optimize import minimize
 
+import sdtoolbox
+
 
 def diluted_species_dict(
         spec,
@@ -94,24 +96,29 @@ def get_adiabatic_temp(
     float
         Adiabatic flame temperature of the input mixture in Kelvin
     """
-    gas = ct.Solution(mech)
-    gas.set_equivalence_ratio(phi, fuel, oxidizer)
-    if (diluent.lower in ("none", "")) or np.isclose(diluent_mol_frac, 0):
-        spec = gas.mole_fraction_dict()
-    else:
-        spec = diluted_species_dict(
-            gas.mole_fraction_dict(),
-            diluent,
-            diluent_mol_frac
-        )
+    try:
+        gas = ct.Solution(mech)
+        gas.set_equivalence_ratio(phi, fuel, oxidizer)
+        if (diluent.lower() in ("none", "")) or np.isclose(diluent_mol_frac, 0):
+            spec = gas.mole_fraction_dict()
+        else:
+            spec = diluted_species_dict(
+                gas.mole_fraction_dict(),
+                diluent,
+                diluent_mol_frac
+            )
 
-    gas.TPX = (
-        init_temp,
-        init_press,
-        spec
-    )
-    gas.equilibrate("HP")
-    return gas.T
+        gas.TPX = (
+            init_temp,
+            init_press,
+            spec
+        )
+        gas.equilibrate("HP")
+        temp = gas.T
+    except ct.CanteraError:
+        temp = np.NaN
+
+    return temp
 
 
 def temp_error(
@@ -185,7 +192,7 @@ def match_adiabatic_temp(
         tol=1e-6
 ):
     """
-    This function returns the **additional** mole fraction of a diluent gas
+    This function returns the mole fraction of a diluent gas
     required to match the adiabatic flame temperature of another diluent. If
     the diluent is *not* in the original mixture (e.g. H2/O2 diluted with N2)
     this will be the **total** mole fraction; if the diluent **is** in the
@@ -229,7 +236,7 @@ def match_adiabatic_temp(
     Returns
     -------
     float
-        Additional mole fraction of diluent gas needed to match the adiabatic
+        Mole fraction of diluent gas needed to match the adiabatic
         flame temperature to within the specified tolerance
     """
     target_temp = get_adiabatic_temp(
@@ -366,4 +373,104 @@ def calculate_laminar_flame_speed(
     flame.set_refine_criteria(ratio=3, slope=0.1, curve=0.1)
     flame.solve(loglevel=0)
 
-    return flame.u[0]
+    return flame.velocity[0]
+
+
+def get_sound_speed(
+    mech,
+    fuel,
+    oxidizer,
+    phi,
+    diluent,
+    diluent_mol_frac,
+    init_temp,
+    init_press,
+):
+    gas = ct.Solution(mech)
+    gas.set_equivalence_ratio(phi, fuel, oxidizer)
+    q_diluted = diluted_species_dict(
+        spec=gas.mole_fraction_dict(),
+        diluent=diluent,
+        diluent_mol_frac=diluent_mol_frac,
+    )
+    cj_dil = sdtoolbox.postshock.CJspeed(
+        P1=init_press,
+        T1=init_temp,
+        q=q_diluted,
+        mech=mech,
+    )
+    gas_fr = sdtoolbox.postshock.PostShock_eq(
+        U1=cj_dil,
+        P1=init_press,
+        T1=init_temp,
+        q=q_diluted,
+        mech=mech,
+    )
+    return sdtoolbox.thermo.soundspeed_fr(gas_fr)
+
+
+def sound_speed_error(
+    diluent_mol_frac,
+    target_speed,
+    mech,
+    fuel,
+    oxidizer,
+    phi,
+    diluent,
+    init_temp,
+    init_press,
+):
+    return abs(
+        get_sound_speed(
+            mech=mech,
+            fuel=fuel,
+            oxidizer=oxidizer,
+            phi=phi,
+            diluent=diluent,
+            diluent_mol_frac=diluent_mol_frac,
+            init_temp=init_temp,
+            init_press=init_press,
+        ) - target_speed
+    )
+
+
+def match_sound_speed(
+    mech,
+    fuel,
+    oxidizer,
+    phi,
+    dil_original,
+    dil_original_mol_frac,
+    dil_new,
+    init_temp,
+    init_press,
+    tol=1e-6,
+):
+    target_speed = get_sound_speed(
+        mech=mech,
+        fuel=fuel,
+        oxidizer=oxidizer,
+        phi=phi,
+        diluent=dil_original,
+        diluent_mol_frac=dil_original_mol_frac,
+        init_temp=init_temp,
+        init_press=init_press,
+    )
+    best = minimize(
+        sound_speed_error,
+        np.array([dil_original_mol_frac]),
+        args=(
+            target_speed,
+            mech,
+            fuel,
+            oxidizer,
+            phi,
+            dil_new,
+            init_temp,
+            init_press,
+        ),
+        method="Nelder-Mead",
+        tol=tol,
+        bounds=[(0, 1)],
+    )
+    return best.x[0]
