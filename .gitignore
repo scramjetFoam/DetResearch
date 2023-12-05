@@ -251,3 +251,5 @@ box_key.json
 
 # don't need to commit error logs either
 error_log_*
+
+*.h5
