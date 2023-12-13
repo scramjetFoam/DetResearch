@@ -15,7 +15,7 @@ import pandas as pd
 import tqdm
 from sdtoolbox.postshock import CJspeed
 
-from funcs.simulation.sensitivity.Fistarmap import istarmap  # noqa: F401
+from funcs.simulation.sensitivity.istarmap import istarmap  # noqa: F401
 from funcs.simulation import cell_size
 from funcs.simulation import thermo
 
