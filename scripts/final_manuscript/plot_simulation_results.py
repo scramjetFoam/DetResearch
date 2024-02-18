@@ -459,6 +459,7 @@ def get_condition_ids(conditions: pd.DataFrame) -> tuple[PlotConditionIds]:
 
 def main():
     set_palette()
+    show_plots = True
     save_plots = False
     show_title = True
 
@@ -495,6 +496,8 @@ def main():
                     show_title=show_title,
                     save_to=save_to,
                 )
+    if show_plots:
+        plt.show()
 
 
 if __name__ == "__main__":
