@@ -15,6 +15,7 @@ class TableName(Enum):
     Conditions: str = "conditions"
     Reactions: str = "reactions"
     Species: str = "species"
+    BulkProperties: str = "bulk_properties"
 
 
 class SimulationType(Enum):
@@ -23,14 +24,21 @@ class SimulationType(Enum):
 
 
 class SqliteDataBase:
-    def __init__(self, path: str):
-        self._path = path
-        self.con = sqlite3.connect(path)
+    def __init__(self, path: str, timeout: float = 600):
+        self.path = path
+        self.timeout = timeout
+        self.con = self.connect()
         self.con.row_factory = sqlite3.Row
 
     def __del__(self):
-        self.con.commit()
+        try:
+            self.con.commit()
+        except sqlite3.ProgrammingError:
+            self.con = self.connect()
         self.con.close()
+
+    def connect(self) -> sqlite3.Connection:
+        return sqlite3.connect(self.path, timeout=self.timeout)
 
 
 class SqliteTable:
@@ -61,13 +69,14 @@ class ConditionTable(SqliteTable):
     def __init__(self, db: SqliteDataBase):
         super().__init__(db=db, table_name=TableName.Conditions.value)
         if not self.table_exists():
+            self.__clear()
             self.__create()
 
-    @retry(sqlite3.OperationalError, tries=5)
+    @retry(sqlite3.OperationalError, tries=10, backoff=2, max_delay=2)
     def __create(self):
         self.cur.execute(
             f"""
-            CREATE TABLE {self.name} (
+            CREATE TABLE IF NOT EXISTS {self.name} (
                 id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
                 sim_type TEXT NOT NULL,
                 mech TEXT NOT NULL,
@@ -82,7 +91,15 @@ class ConditionTable(SqliteTable):
             """
         )
 
-    @retry(sqlite3.OperationalError, tries=5)
+    @retry(sqlite3.OperationalError, tries=10, backoff=2, max_delay=2)
+    def __clear(self):
+        self.cur.execute(
+            f"""
+            DROP TABLE IF EXISTS {self.name};
+            """
+        )
+
+    @retry(sqlite3.OperationalError, tries=10, backoff=2, max_delay=2)
     def insert(self, test_conditions: Conditions) -> int:
         """
         Stores a row of test data in the current table.
@@ -110,8 +127,68 @@ class ConditionTable(SqliteTable):
 
 
 @dataclasses.dataclass
+class BulkPropertiesData:
+    condition_id: int
+    run_no: int
+    time: float
+    temperature: float
+    pressure: float
+
+
+class BulkPropertiesTable(SqliteTable):
+    def __init__(self, db: SqliteDataBase):
+        super().__init__(db=db, table_name=TableName.BulkProperties.value)
+        if not self.table_exists():
+            self.__create()
+
+    @retry(sqlite3.OperationalError, tries=10, backoff=2, max_delay=2)
+    def __create(self):
+        self.cur.execute(
+            f"""
+            CREATE TABLE IF NOT EXISTS {self.name} (
+                condition_id INTEGER NOT NULL,
+                run_no INTEGER NOT NULL,
+                time REAL NOT NULL,
+                temperature REAL NOT NULL,
+                pressure REAL NOT NULL,
+                PRIMARY KEY (condition_id, run_no, time),
+                FOREIGN KEY(condition_id) REFERENCES {TableName.Conditions.value}(id)
+                ON UPDATE CASCADE ON DELETE CASCADE
+            );
+            """
+        )
+
+    @retry(sqlite3.OperationalError, tries=10, backoff=2, max_delay=2)
+    def insert_or_update(self, data: BulkPropertiesData, commit: bool = True):
+        self.cur.execute(
+            f"""
+            INSERT INTO {self.name} VALUES (
+                :condition_id,
+                :run_no,
+                :time,
+                :temperature,
+                :pressure
+            )
+            ON CONFLICT(condition_id, run_no, time) DO UPDATE SET
+                temperature=excluded.temperature,
+                pressure=excluded.pressure;
+            """,
+            {
+                "condition_id": data.condition_id,
+                "run_no": data.run_no,
+                "time": data.time,
+                "temperature": data.temperature,
+                "pressure": data.pressure,
+            },
+        )
+        if commit:
+            self.cur.connection.commit()
+
+
+@dataclasses.dataclass
 class ReactionData:
     condition_id: int
+    run_no: int
     time: float
     reaction: str
     fwd_rate_constant: float
@@ -124,35 +201,43 @@ class ReactionTable(SqliteTable):
         if not self.table_exists():
             self.__create()
 
-    @retry(sqlite3.OperationalError, tries=5)
+    @retry(sqlite3.OperationalError, tries=10, backoff=2, max_delay=2)
     def __create(self):
         self.cur.execute(
             f"""
-            CREATE TABLE {self.name} (
+            CREATE TABLE IF NOT EXISTS {self.name} (
                 condition_id INTEGER NOT NULL,
+                run_no INTEGER NOT NULL,
                 time REAL NOT NULL,
                 reaction TEXT NOT NULL,
                 fwd_rate_constant REAL NOT NULL,
                 fwd_rate_of_progress REAL NOT NULL,
-                FOREIGN KEY(condition_id) REFERENCES {TableName.Conditions.value}(id) ON UPDATE CASCADE
+                PRIMARY KEY (condition_id, run_no, time, reaction),
+                FOREIGN KEY(condition_id) REFERENCES {TableName.Conditions.value}(id)
+                ON UPDATE CASCADE ON DELETE CASCADE
             );
             """
         )
 
-    @retry(sqlite3.OperationalError, tries=5)
-    def insert(self, data: ReactionData, commit: bool = True):
+    @retry(sqlite3.OperationalError, tries=10, backoff=2, max_delay=2)
+    def insert_or_update(self, data: ReactionData, commit: bool = True):
         self.cur.execute(
             f"""
             INSERT INTO {self.name} VALUES (
                 :condition_id,
+                :run_no,
                 :time,
                 :reaction,
                 :fwd_rate_constant,
                 :fwd_rate_of_progress
-            );
+            )
+            ON CONFLICT(condition_id, run_no, time, reaction) DO UPDATE SET
+                fwd_rate_constant=excluded.fwd_rate_constant,
+                fwd_rate_of_progress=excluded.fwd_rate_of_progress;
             """,
             {
                 "condition_id": data.condition_id,
+                "run_no": data.run_no,
                 "time": data.time,
                 "reaction": data.reaction,
                 "fwd_rate_constant": data.fwd_rate_constant,
@@ -166,6 +251,7 @@ class ReactionTable(SqliteTable):
 @dataclasses.dataclass
 class SpeciesData:
     condition_id: int
+    run_no: int
     time: float
     species: Species
     mole_frac: float
@@ -179,37 +265,46 @@ class SpeciesTable(SqliteTable):
         if not self.table_exists():
             self.__create()
 
-    @retry(sqlite3.OperationalError, tries=5)
+    @retry(sqlite3.OperationalError, tries=10, backoff=2, max_delay=2)
     def __create(self):
         self.cur.execute(
             f"""
-            CREATE TABLE {self.name} (
+            CREATE TABLE IF NOT EXISTS {self.name} (
                 condition_id INTEGER NOT NULL,
+                run_no INTEGER NOT NULL,
                 time REAL NOT NULL,
                 species TEXT NOT NULL,
                 mole_frac REAL NOT NULL,
                 concentration REAL NOT NULL,
                 creation_rate REAL NOT NULL,
-                FOREIGN KEY(condition_id) REFERENCES {TableName.Conditions.value}(id) ON UPDATE CASCADE
+                PRIMARY KEY (condition_id, run_no, time, species),
+                FOREIGN KEY(condition_id) REFERENCES {TableName.Conditions.value}(id)
+                ON UPDATE CASCADE ON DELETE CASCADE
             );
             """
         )
 
-    @retry(sqlite3.OperationalError, tries=5)
-    def insert(self, data: SpeciesData, commit: bool = True):
+    @retry(sqlite3.OperationalError, tries=10, backoff=2, max_delay=2)
+    def insert_or_update(self, data: SpeciesData, commit: bool = True):
         self.cur.execute(
             f"""
             INSERT INTO {self.name} VALUES (
                 :condition_id,
+                :run_no,
                 :time,
                 :species,
                 :mole_frac,
                 :concentration,
                 :creation_rate
-            );
+            )
+            ON CONFLICT(condition_id, run_no, time, species) DO UPDATE SET
+                mole_frac=excluded.mole_frac,
+                concentration=excluded.concentration,
+                creation_rate=excluded.creation_rate;
             """,
             {
                 "condition_id": data.condition_id,
+                "run_no": data.run_no,
                 "time": data.time,
                 "species": data.species.name,
                 "mole_frac": data.mole_frac,
@@ -234,3 +329,11 @@ class SimulationDatabase:
         self.conditions_id = self.conditions.insert(conditions)
         self.reactions = ReactionTable(db)
         self.species = SpeciesTable(db)
+        self.bulk_properties = BulkPropertiesTable(self.db)
+
+    def reconnect(self):
+        self.db = SqliteDataBase(path=self.db.path)
+        self.conditions = ConditionTable(self.db)
+        self.reactions = ReactionTable(self.db)
+        self.species = SpeciesTable(self.db)
+        self.bulk_properties = BulkPropertiesTable(self.db)

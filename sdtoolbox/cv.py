@@ -33,14 +33,16 @@ Tested with:
 Under these operating systems:
     Windows 8.1, Windows 10, Linux (Debian 9)
 """
+import sqlite3
 from typing import Optional
 
 import cantera as ct
 import numpy as np
+from retry import retry
 from scipy.integrate import solve_ivp
 from scipy.integrate._ivp.ivp import OdeResult
 
-from sdtoolbox.output import SimulationDatabase, ReactionData, SpeciesData
+from sdtoolbox.output import SimulationDatabase, ReactionData, SpeciesData, BulkPropertiesData
 
 
 class CVSys(object):
@@ -51,16 +53,20 @@ class CVSys(object):
         spec_indices: Optional[list[int]] = None,
         db: Optional[SimulationDatabase] = None,
         batch_threshold: int = 10_000,
+        run_no: int = 1,
     ):
         self.gas = gas
         self.rxn_indices = rxn_indices
         self.spec_indices = spec_indices
         self.db = db
-        self.rxn_to_store = []
-        self.spec_to_store = []
+        self.rxn_to_store: list[ReactionData] = []
+        self.spec_to_store: list[SpeciesData] = []
+        self.bulk_properties_to_store: list[BulkPropertiesData] = []
         self.batch_threshold = batch_threshold
+        self.run_no = run_no
         self.can_store_reaction_data = None not in (self.rxn_indices, self.db) and len(self.rxn_indices) > 0
         self.can_store_species_data = None not in (self.spec_indices, self.db) and len(self.spec_indices) > 0
+        self.can_store_bulk_properties_data = self.db is not None
 
     def __del__(self):
         if self.can_store_reaction_data and len(self.rxn_to_store) > 0:
@@ -68,23 +74,73 @@ class CVSys(object):
 
         if self.can_store_species_data and len(self.spec_to_store) > 0:
             self.store_all_spec_data()
+            self.store_all_rxn_data()
+
+        if self.can_store_bulk_properties_data and len(self.bulk_properties_to_store) > 0:
+            self.store_all_bulk_properties_data()
 
         if self.db is not None:
-            self.db.reactions.cur.connection.close()
-            self.db.species.cur.connection.close()
-            self.db.conditions.cur.close()
+            try:
+                self.db.reactions.cur.connection.close()
+            except:
+                pass
+            try:
+                self.db.species.cur.connection.close()
+            except:
+                pass
+            try:
+                self.db.conditions.cur.close()
+            except:
+                pass
+            try:
+                self.db.bulk_properties.cur.close()
+            except:
+                pass
 
+    @retry(tries=10, backoff=2, max_delay=2)
     def store_all_rxn_data(self):
         for data in self.rxn_to_store:
-            self.db.reactions.insert(data, commit=False)
-        self.db.reactions.cur.connection.commit()
+            try:
+                self.db.reactions.insert_or_update(data, commit=False)
+            except sqlite3.ProgrammingError:
+                self.db.reconnect()
+                self.db.reactions.insert_or_update(data, commit=False)
+        try:
+            self.db.reactions.cur.connection.commit()
+        except sqlite3.ProgrammingError:
+            self.db.reconnect()
+            self.db.reactions.cur.connection.commit()
         self.rxn_to_store.clear()
 
+    @retry(tries=10, backoff=2, max_delay=2)
     def store_all_spec_data(self):
         for data in self.spec_to_store:
-            self.db.species.insert(data, commit=False)
-        self.db.species.cur.connection.commit()
+            try:
+                self.db.species.insert_or_update(data, commit=False)
+            except sqlite3.ProgrammingError:
+                self.db.reconnect()
+                self.db.species.insert_or_update(data, commit=False)
+        try:
+            self.db.species.cur.connection.commit()
+        except sqlite3.ProgrammingError:
+            self.db.reconnect()
+            self.db.species.cur.connection.commit()
         self.spec_to_store.clear()
+
+    @retry(tries=10, backoff=2, max_delay=2)
+    def store_all_bulk_properties_data(self):
+        for data in self.bulk_properties_to_store:
+            try:
+                self.db.bulk_properties.insert_or_update(data, commit=False)
+            except sqlite3.ProgrammingError:
+                self.db.reconnect()
+                self.db.bulk_properties.insert_or_update(data, commit=False)
+        try:
+            self.db.bulk_properties.cur.connection.commit()
+        except sqlite3.ProgrammingError:
+            self.db.reconnect()
+            self.db.bulk_properties.cur.connection.commit()
+        self.bulk_properties_to_store.clear()
         
     def __call__(self, t, y):
         """
@@ -118,6 +174,7 @@ class CVSys(object):
             for i in self.rxn_indices:
                 data = ReactionData(
                     condition_id=self.db.conditions_id,
+                    run_no=self.run_no,
                     time=t,
                     reaction=self.gas.reaction_equation(i),
                     fwd_rate_constant=self.gas.forward_rate_constants[i],
@@ -133,9 +190,10 @@ class CVSys(object):
                 species = self.gas.species(j)
                 data = SpeciesData(
                     condition_id=self.db.conditions_id,
+                    run_no=self.run_no,
                     time=t,
                     species=species,
-                    mole_frac=self.gas.mole_fraction_dict().get(species, 0),
+                    mole_frac=self.gas.mole_fraction_dict().get(species.name, 0),
                     concentration=self.gas.concentrations[j],
                     creation_rate=self.gas.creation_rates[j],
                 )
@@ -143,6 +201,19 @@ class CVSys(object):
 
             if len(self.spec_to_store) >= self.batch_threshold:
                 self.store_all_spec_data()
+
+        if self.can_store_bulk_properties_data:
+            data = BulkPropertiesData(
+                condition_id=self.db.conditions_id,
+                run_no=self.run_no,
+                time=t,
+                temperature=self.gas.T,
+                pressure=self.gas.P,
+            )
+            self.bulk_properties_to_store.append(data)
+
+            if len(self.bulk_properties_to_store) >= self.batch_threshold:
+                self.store_all_bulk_properties_data()
         
         return np.hstack((dTdt, dYdt))
     
@@ -158,6 +229,7 @@ def cvsolve(
     spec_indices: Optional[list[int]] = None,
     db: Optional[SimulationDatabase] = None,
     batch_threshold: int = 10_000,
+    run_no: int = 1,
 ):
     """
     Solves the ODE system defined in CVSys, taking the gas object input as the
@@ -213,7 +285,7 @@ def cvsolve(
 
     # noinspection PyTypeChecker
     out: OdeResult = solve_ivp(
-        CVSys(gas, rxn_indices, spec_indices, db, batch_threshold),
+        CVSys(gas, rxn_indices, spec_indices, db, batch_threshold, run_no),
         tel,
         y0,
         method='Radau',
