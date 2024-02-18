@@ -253,3 +253,6 @@ box_key.json
 error_log_*
 
 *.h5
+
+scripts/final_manuscript/plots/
+
