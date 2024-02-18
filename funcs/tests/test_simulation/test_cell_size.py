@@ -46,7 +46,7 @@ class TestAgainstDemo:
         undiluted = {"H2": 2 / 3, "O2": 1 / 3}
 
         # should not dilute with diluent=None
-        test = cs._build_gas_object(
+        test = cs.build_gas_object(
             mechanism="Mevel2017.cti",
             equivalence=1,
             fuel="H2",
@@ -61,7 +61,7 @@ class TestAgainstDemo:
         assert all([np.isclose(undiluted[key], value) for key, value in test.items()])
 
         # should not dilute with diluent_mol_frac=0
-        test = cs._build_gas_object(
+        test = cs.build_gas_object(
             mechanism="Mevel2017.cti",
             equivalence=1,
             fuel="H2",
@@ -76,7 +76,7 @@ class TestAgainstDemo:
         assert all([np.isclose(undiluted[key], value) for key, value in test.items()])
 
     def test_build_gas_with_dilution(self):
-        test = cs._build_gas_object(
+        test = cs.build_gas_object(
             mechanism="Mevel2017.cti",
             equivalence=1,
             fuel="H2",
@@ -94,7 +94,7 @@ class TestAgainstDemo:
     def test_perturbed_gas_object_undiluted(self):
         pert = 3
         pert_frac = 0.01
-        test = cs._build_gas_object(
+        test = cs.build_gas_object(
             mechanism=self.mechanism,
             initial_temp=self.init_temp,
             initial_press=self.init_press,
@@ -115,7 +115,7 @@ class TestAgainstDemo:
     def test_perturbed_gas_object_diluted(self):
         pert = 3
         pert_frac = 0.01
-        test = cs._build_gas_object(
+        test = cs.build_gas_object(
             mechanism='Mevel2017.cti',
             initial_temp=300,
             initial_press=101325,

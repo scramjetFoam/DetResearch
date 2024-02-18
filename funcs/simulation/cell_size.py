@@ -19,6 +19,7 @@ import cantera as ct
 import numpy as np
 
 import sdtoolbox
+import sdtoolbox.output
 from .thermo import diluted_species_dict
 
 
@@ -93,9 +94,10 @@ def wrapped_cvsolve(
                     spec_indices=spec_indices,
                     db=db,
                     batch_threshold=batch_threshold,
+                    run_no=tries,
                 )
                 break
-            except:  # noqa: E722
+            except:  # noqa: E722  # todo: delete previous run?
                 t_end *= 2
                 max_step *= 2
         else:
@@ -108,6 +110,7 @@ def wrapped_cvsolve(
                 spec_indices=spec_indices,
                 db=db,
                 batch_threshold=batch_threshold,
+                run_no=tries,
             )
 
     if induction_time_only:
@@ -161,9 +164,10 @@ def wrapped_zndsolve(
                     spec_indices=spec_indices,
                     db=db,
                     batch_threshold=batch_threshold,
+                    run_no=tries,
                 )
                 break
-            except (ct.CanteraError, ValueError):
+            except (ct.CanteraError, ValueError):  # todo: delete previous run?
                 max_step /= 10.
         else:
             # let it break if it's gonna break after max tries
@@ -178,6 +182,7 @@ def wrapped_zndsolve(
                 spec_indices=spec_indices,
                 db=db,
                 batch_threshold=batch_threshold,
+                run_no=tries,
             )
     return ZndResult(
         induction_length=out["ind_len_ZND"],
@@ -241,7 +246,7 @@ def calculate(
     cv_end_time: float = 1e-6,
     max_step_cv: float = 5e-7,
 ) -> CellSizeResults:
-    base_gas = _build_gas_object(
+    base_gas = build_gas_object(
         mechanism=mechanism,
         equivalence=equivalence,
         fuel=fuel,
@@ -431,15 +436,21 @@ def calculate_westbrook_only(
     perturbation_fraction: float = 1e-2,
     max_tries_znd: int = 10,
     max_step_znd: float = 1e-4,
+    znd_end_time: float = 2e-3,
     max_tries_cv: int = 15,
     cv_end_time: float = 1e-6,
     max_step_cv: float = 5e-7,
     rxn_indices: Optional[list[int]] = None,
     spec_indices: Optional[list[int]] = None,
-    db: Optional[sdtoolbox.output.SimulationDatabase] = None,
+    db_path: Optional[str] = None,
     batch_threshold: int = 10_000,
 ) -> CellSizeResults:
-    base_gas = _build_gas_object(
+    if db_path is not None:
+        db = sdtoolbox.output.SqliteDataBase(path=db_path)
+    else:
+        db = None
+
+    base_gas = build_gas_object(
         mechanism=mechanism,
         equivalence=equivalence,
         fuel=fuel,
@@ -464,17 +475,33 @@ def calculate_westbrook_only(
         perturbation_fraction=perturbation_fraction,
     )
 
+    if db is not None:
+        conditions = sdtoolbox.output.Conditions(
+            sim_type=sdtoolbox.output.SimulationType.Znd.value,
+            mech=mechanism,
+            initial_temp=initial_temp,
+            initial_press=initial_press,
+            fuel=fuel,
+            oxidizer=oxidizer,
+            equivalence=equivalence,
+            diluent=diluent,
+            dil_mf=diluent_mol_frac,
+        )
+        sim_db = sdtoolbox.output.SimulationDatabase(db=db, conditions=conditions)
+    else:
+        sim_db = None
+
     # SOLVE ZND DETONATION ODES
     znd_result = wrapped_zndsolve(
         gas=gas,
         base_gas=base_gas,
         cj_speed=cj_speed,
-        t_end=2e-3,
+        t_end=znd_end_time,
         max_step=max_step_znd,
         max_tries=max_tries_znd,
         rxn_indices=rxn_indices,
         spec_indices=spec_indices,
-        db=db,
+        db=sim_db,
         batch_threshold=batch_threshold,
     )
 
@@ -500,6 +527,12 @@ def calculate_westbrook_only(
         limit_species = 'O2'
     limit_species_idx = gas.species_index(limit_species)
 
+    if db is not None:
+        # guaranteed by db None check
+        # noinspection PyUnboundLocalVariable
+        conditions.sim_type = sdtoolbox.output.SimulationType.Cv.value
+        sim_db = sdtoolbox.output.SimulationDatabase(db=db, conditions=conditions)
+
     cv_out_0 = wrapped_cvsolve(
         gas,
         limit_species_idx,
@@ -509,7 +542,7 @@ def calculate_westbrook_only(
         induction_time_only=False,
         rxn_indices=rxn_indices,
         spec_indices=spec_indices,
-        db=db,
+        db=sim_db,
         batch_threshold=batch_threshold,
     )
 
@@ -549,7 +582,7 @@ def calculate_westbrook_only(
     )
 
 
-def _build_gas_object(
+def build_gas_object(
     mechanism: str,
     equivalence: float,
     fuel: str,
@@ -558,8 +591,8 @@ def _build_gas_object(
     diluent_mol_frac: float,
     initial_temp: float,
     initial_press: float,
-    perturbed_reaction: Optional[int],
-    perturbation_fraction: float
+    perturbed_reaction: Optional[int] = None,
+    perturbation_fraction: Optional[float] = None,
 ) -> ct.Solution:
     gas = ct.Solution(mechanism)
 
@@ -568,7 +601,7 @@ def _build_gas_object(
         gas.X = diluted_species_dict(gas.mole_fraction_dict(), diluent, diluent_mol_frac)
 
     gas.TP = initial_temp, initial_press
-    if perturbed_reaction is not None:
+    if None not in (perturbed_reaction, perturbation_fraction):
         gas.set_multiplier(1 + perturbation_fraction, perturbed_reaction)
     return gas
 
