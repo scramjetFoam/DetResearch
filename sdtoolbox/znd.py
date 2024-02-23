@@ -215,6 +215,7 @@ class ZNDSys(object):
                 time=t,
                 temperature=self.gas.T,
                 pressure=self.gas.P,
+                velocity=U,
             )
             self.bulk_properties_to_store.append(data)
 

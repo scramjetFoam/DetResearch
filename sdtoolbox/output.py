@@ -56,6 +56,8 @@ class SqliteTable:
 class Conditions:
     sim_type: str
     mech: str
+    match: Optional[str]
+    dil_condition: str
     initial_temp: float
     initial_press: float
     fuel: str
@@ -80,13 +82,20 @@ class ConditionTable(SqliteTable):
                 id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
                 sim_type TEXT NOT NULL,
                 mech TEXT NOT NULL,
+                match TEXT,
+                dil_condition TXT NOT NULL,
                 initial_temp REAL NOT NULL,
                 initial_press REAL NOT NULL,
                 fuel TEXT NOT NULL,
                 oxidizer TEXT NOT NULL,
                 equivalence REAL NOT NULL,
                 diluent TEXT,
-                dil_mf REAL NOT NULL
+                dil_mf REAL NOT NULL,
+                temp_vn REAL,
+                temp_west REAL,
+                t_ind REAL,
+                u_znd REAL,
+                u_cj REAL
             );
             """
         )
@@ -111,13 +120,20 @@ class ConditionTable(SqliteTable):
                 Null,
                 :sim_type,
                 :mech,
+                :match,
+                :dil_condition,
                 :initial_temp,
                 :initial_press,
                 :fuel,
                 :oxidizer,
                 :equivalence,
                 :diluent,
-                :dil_mf
+                :dil_mf,
+                Null,
+                Null,
+                Null,
+                Null,
+                Null
             );
             """,
             dataclasses.asdict(test_conditions),
@@ -133,6 +149,7 @@ class BulkPropertiesData:
     time: float
     temperature: float
     pressure: float
+    velocity: Optional[float] = None
 
 
 class BulkPropertiesTable(SqliteTable):
@@ -151,6 +168,7 @@ class BulkPropertiesTable(SqliteTable):
                 time REAL NOT NULL,
                 temperature REAL NOT NULL,
                 pressure REAL NOT NULL,
+                velocity REAL,
                 PRIMARY KEY (condition_id, run_no, time),
                 FOREIGN KEY(condition_id) REFERENCES {TableName.Conditions.value}(id)
                 ON UPDATE CASCADE ON DELETE CASCADE
@@ -167,11 +185,13 @@ class BulkPropertiesTable(SqliteTable):
                 :run_no,
                 :time,
                 :temperature,
-                :pressure
+                :pressure,
+                :velocity
             )
             ON CONFLICT(condition_id, run_no, time) DO UPDATE SET
                 temperature=excluded.temperature,
-                pressure=excluded.pressure;
+                pressure=excluded.pressure,
+                velocity=excluded.velocity;
             """,
             {
                 "condition_id": data.condition_id,
@@ -179,6 +199,7 @@ class BulkPropertiesTable(SqliteTable):
                 "time": data.time,
                 "temperature": data.temperature,
                 "pressure": data.pressure,
+                "velocity": data.velocity,
             },
         )
         if commit:
