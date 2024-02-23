@@ -307,6 +307,7 @@ class SimulationPlots:
         save_to: Optional[str] = None,
         suptitle_fontsize: int = 12,
         row_fontsize: int = 10,
+        ignore_middle: bool = False,
     ):
         # noinspection PyTypeChecker
         self._figure: plt.Figure = None
@@ -320,10 +321,11 @@ class SimulationPlots:
         # noinspection PyTypeChecker
         self.n2_tad: SimulationPlotRow = None
 
-        self._create_plots()
+        self._create_plots(ignore_middle)
 
         self.co2.row.set_title("CO$_{2}$ diluted", fontsize=row_fontsize)
-        self.n2_mf.row.set_title("N$_{2}$ diluted, mole fraction matched", fontsize=row_fontsize)
+        if not ignore_middle:
+            self.n2_mf.row.set_title("N$_{2}$ diluted, mole fraction matched", fontsize=row_fontsize)
         self.n2_tad.row.set_title("N$_{2}$ diluted, T$_{ad}$ matched", fontsize=row_fontsize)
 
         if show_title:
@@ -335,20 +337,24 @@ class SimulationPlots:
                 y=0.925,
             )
 
-        self._plot_data(data, data_column, condition_ids)
+        self._plot_data(data, data_column, condition_ids, ignore_middle)
         self._figure.align_ylabels()
 
         if isinstance(save_to, str):
             self._figure.savefig(save_to)
 
-    def _create_plots(self):
+    def _create_plots(self, ignore_middle: bool):
         self._figure = plt.figure(figsize=(8.5, 11))
 
         n2 = Species("N", 2)
         co2 = Species("CO", 2)
 
-        diluents = (co2, n2, n2)
-        self_rows = ("co2", "n2_mf", "n2_tad")  # these need to match rows in __init__()
+        if ignore_middle:
+            diluents = (co2, n2)
+            self_rows = ("co2", "n2_tad")
+        else:
+            diluents = (co2, n2, n2)
+            self_rows = ("co2", "n2_mf", "n2_tad")  # these need to match rows in __init__()
         rows_gridspec = self._figure.add_gridspec(nrows=len(diluents), ncols=1, hspace=0.3)
         for self_row, diluent, row_gs in zip(self_rows, diluents, rows_gridspec):
             row = self._figure.add_subplot(row_gs)
@@ -385,6 +391,7 @@ class SimulationPlots:
         data: pd.DataFrame,
         data_column: DataColumn,
         condition_ids: PlotConditionIds,
+        ignore_middle: bool,
     ):
         is_reaction_data = "reaction" in data.columns
         is_species_data = "species" in data.columns
@@ -399,7 +406,10 @@ class SimulationPlots:
             raise RuntimeError("Species plots were requested but reaction data was provided!")
 
         # these need to match the keys for DataColumn and PlotConditionIds
-        dilution_types = ("co2", "n2_mf", "n2_tad")
+        if ignore_middle:
+            dilution_types = ("co2", "n2_tad")
+        else:
+            dilution_types = ("co2", "n2_mf", "n2_tad")
         relative_amounts = ("dil_low", "dil_high")
         for dilution_type in dilution_types:
             for relative_amount in relative_amounts:
@@ -430,26 +440,50 @@ def get_condition_ids(conditions: pd.DataFrame) -> tuple[PlotConditionIds]:
                 sim_type=validate_sim_type(str(sim_type)),
                 co2=ResultConditionIds(
                     dil_high=sim_type_conditions[
-                        ((sim_type_conditions["diluent"] == "CO2") & (sim_type_conditions["dil_mf"] > 0.15))
+                        (
+                            (sim_type_conditions["diluent"] == "CO2")
+                            & (sim_type_conditions["match"].isna())
+                            & (sim_type_conditions["dil_condition"] == "high")
+                        )
                     ]["id"].values[0],
                     dil_low=sim_type_conditions[
-                        ((sim_type_conditions["diluent"] == "CO2") & (sim_type_conditions["dil_mf"] < 0.15))
+                        (
+                            (sim_type_conditions["diluent"] == "CO2")
+                            & (sim_type_conditions["match"].isna())
+                            & (sim_type_conditions["dil_condition"] == "low")
+                        )
                     ]["id"].values[0],
                 ),
                 n2_mf=ResultConditionIds(
                     dil_high=sim_type_conditions[
-                        ((sim_type_conditions["diluent"] == "N2") & (sim_type_conditions["dil_mf"] > 0.15))
+                        (
+                            (sim_type_conditions["diluent"] == "N2")
+                            & (sim_type_conditions["match"] == "mf")
+                            & (sim_type_conditions["dil_condition"] == "high")
+                        )
                     ]["id"].values[0],
                     dil_low=sim_type_conditions[
-                        ((sim_type_conditions["diluent"] == "N2") & (sim_type_conditions["dil_mf"] < 0.15))
+                        (
+                            (sim_type_conditions["diluent"] == "N2")
+                            & (sim_type_conditions["match"] == "mf")
+                            & (sim_type_conditions["dil_condition"] == "low")
+                        )
                     ]["id"].values[0],
                 ),
                 n2_tad=ResultConditionIds(
                     dil_high=sim_type_conditions[
-                        ((sim_type_conditions["diluent"] == "N2") & (sim_type_conditions["dil_mf"] > 0.3))
+                        (
+                            (sim_type_conditions["diluent"] == "N2")
+                            & (sim_type_conditions["match"] == "tad")
+                            & (sim_type_conditions["dil_condition"] == "high")
+                        )
                     ]["id"].values[0],
                     dil_low=sim_type_conditions[
-                        ((sim_type_conditions["diluent"] == "N2") & (sim_type_conditions["dil_mf"] < 0.3))
+                        (
+                            (sim_type_conditions["diluent"] == "N2")
+                            & (sim_type_conditions["match"] == "tad")
+                            & (sim_type_conditions["dil_condition"] == "low")
+                        )
                     ]["id"].values[0],
                 ),
             )
@@ -462,6 +496,7 @@ def main():
     show_plots = True
     save_plots = False
     show_title = True
+    ignore_middle_plot = True
 
     db_path = "/home/mick/DetResearch/scripts/final_manuscript/co2_reaction_study_less_znd.sqlite"
     con = sqlite3.connect(db_path)
@@ -495,6 +530,7 @@ def main():
                     data_column=data_column,
                     show_title=show_title,
                     save_to=save_to,
+                    ignore_middle=ignore_middle_plot,
                 )
     if show_plots:
         plt.show()

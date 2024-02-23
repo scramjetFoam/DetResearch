@@ -430,6 +430,8 @@ def calculate_westbrook_only(
     oxidizer: str,
     equivalence: float,
     diluent: Optional[str],
+    match: Optional[str],
+    dil_condition: str,
     diluent_mol_frac: float,
     cj_speed: float,
     perturbed_reaction: Optional[float] = None,
@@ -449,6 +451,8 @@ def calculate_westbrook_only(
         db = sdtoolbox.output.SqliteDataBase(path=db_path)
     else:
         db = None
+
+    conditions_ids = []
 
     base_gas = build_gas_object(
         mechanism=mechanism,
@@ -479,6 +483,8 @@ def calculate_westbrook_only(
         conditions = sdtoolbox.output.Conditions(
             sim_type=sdtoolbox.output.SimulationType.Znd.value,
             mech=mechanism,
+            match=match,
+            dil_condition=dil_condition,
             initial_temp=initial_temp,
             initial_press=initial_press,
             fuel=fuel,
@@ -488,6 +494,7 @@ def calculate_westbrook_only(
             dil_mf=diluent_mol_frac,
         )
         sim_db = sdtoolbox.output.SimulationDatabase(db=db, conditions=conditions)
+        conditions_ids.append(str(sim_db.conditions_id))
     else:
         sim_db = None
 
@@ -532,6 +539,7 @@ def calculate_westbrook_only(
         # noinspection PyUnboundLocalVariable
         conditions.sim_type = sdtoolbox.output.SimulationType.Cv.value
         sim_db = sdtoolbox.output.SimulationDatabase(db=db, conditions=conditions)
+        conditions_ids.append(str(sim_db.conditions_id))
 
     cv_out_0 = wrapped_cvsolve(
         gas,
@@ -554,6 +562,31 @@ def calculate_westbrook_only(
     temp_west = 0.5*(temp_final - temp_vn) + temp_vn
     t_west = np.nanmax(cv_out_0.time[cv_out_0.temperature < temp_west], initial=0)
 
+    # todo: save temp_west, t_west, znd_result.velocity to conditions table
+    if db is not None:
+        with db.connect() as con:
+            con.execute(
+                f"""
+                UPDATE
+                    conditions
+                SET
+                    temp_vn = :temp_vn,
+                    temp_west = :temp_west,
+                    t_ind = :t_ind,
+                    u_znd = :u_znd,
+                    u_cj = :u_cj
+                WHERE
+                    id in ({','.join(conditions_ids)});
+                """,
+                {
+                    "temp_vn": temp_vn,
+                    "temp_west": temp_west,
+                    "t_ind": t_west,
+                    "u_znd": znd_result.velocity,
+                    "u_cj": cj_speed,
+                }
+            )
+            con.commit()
     induction_length = ModelResults(
         westbrook=t_west*znd_result.velocity,
         gavrikov=np.NaN,

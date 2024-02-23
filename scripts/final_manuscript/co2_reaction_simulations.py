@@ -2,6 +2,7 @@ import concurrent.futures
 import sys
 import warnings
 from concurrent.futures import ProcessPoolExecutor
+from typing import Optional
 
 import cantera as ct
 from tqdm import tqdm
@@ -36,6 +37,8 @@ def get_important_species_indices(gas: ct.Solution) -> list[int]:
 
 def simulate(
     mech: str,
+    match: Optional[str],
+    dil_condition: str,
     fuel: str,
     oxidizer: str,
     diluent: str,
@@ -61,6 +64,8 @@ def simulate(
         warnings.simplefilter("ignore")
         calculate_westbrook_only(
             mechanism=mech,
+            match=match,
+            dil_condition=dil_condition,
             initial_temp=t0,
             initial_press=p0,
             fuel=fuel,
@@ -97,6 +102,8 @@ def main():
         init_temp=t0,
         init_press=p0,
     ) for mf_co2 in co2_dil_mfs] + co2_dil_mfs  # Tad matched + mole fraction matched
+    n2_match = ["tad" for _ in co2_dil_mfs] + ["mf" for _ in co2_dil_mfs]
+    dil_conditions = ["low", "high"]
 
     n_conditions = len(co2_dil_mfs) + len(n2_dil_mfs)
     with tqdm(total=n_conditions, unit="simulation", file=sys.stdout, colour="green", desc="Running") as counter:
@@ -125,11 +132,13 @@ def main():
 
         with ProcessPoolExecutor() as executor:
             futures = set()
-            for dil_mf in co2_dil_mfs:
+            for dil_mf, dil_condition in zip(co2_dil_mfs, dil_conditions):
                 # noinspection PyTypeChecker
                 f = executor.submit(
                     simulate,
                     mech=mech,
+                    match=None,
+                    dil_condition=dil_condition,
                     fuel=fuel,
                     oxidizer=oxidizer,
                     diluent="CO2",
@@ -139,11 +148,13 @@ def main():
                     dil_mf=dil_mf,
                 )
                 futures.add(f)
-            for dil_mf in n2_dil_mfs:
+            for dil_mf, match, dil_condition in zip(n2_dil_mfs, n2_match, dil_conditions*2):
                 # noinspection PyTypeChecker
                 f = executor.submit(
                     simulate,
                     mech=mech,
+                    match=match,
+                    dil_condition=dil_condition,
                     fuel=fuel,
                     oxidizer=oxidizer,
                     diluent="N2",
