@@ -211,6 +211,7 @@ class SimulationPlot:
         data: pd.DataFrame,
         data_column: DataColumn,
         result_designator_column: str,
+        conditions: pd.Series,
     ):
         """
         Parameters
@@ -221,9 +222,14 @@ class SimulationPlot:
             entry
         """
         plot_data = data.sort_values("time")
-        plot_data["time"] *= 1_000_000  # s -> us
+        time_scale = 1_000_000  # s -> us
+        temp_scale = 1/1_000  # K -> kK
+
+        plot_data["time"] *= time_scale
         plot_data["pressure"] /= 1_000_000  # Pa -> MPa
-        plot_data["temperature"] /= 1_000  # K -> kK
+        plot_data["temperature"] *= temp_scale
+        induction_time = conditions.t_ind * time_scale
+        induction_temp = conditions.temp_west * temp_scale
 
         dil_mfs = plot_data["dil_mf"].unique()
         if len(dil_mfs) != 1:
@@ -234,6 +240,13 @@ class SimulationPlot:
         line_temperature = self.temperature.plot(
             plot_data["time"], plot_data["temperature"], ls="--", color="C0", label="T"
         )
+
+        # Induction time is determined by a temperature threshold in the CV simulations, so that is where we plot it
+        if conditions.sim_type == "cv":
+            self.temperature.plot(induction_time, induction_temp, 'x', color="C0", ms=5)
+            for ax in (self.temperature, self.results):
+                ax.axvline(induction_time, zorder=-1, color="k", alpha=0.2)
+
         self.pressure.set_ylabel("Pressure (MPa)", fontsize=self._axis_fontsize)
         self.temperature.set_ylabel("Temperature\n(K x1,000)", fontsize=self._axis_fontsize)
 
@@ -284,17 +297,17 @@ class SimulationPlotRow:
 
 
 @dataclass(frozen=True)
-class ResultConditionIds:
-    dil_high: int
-    dil_low: int
+class ResultConditions:
+    dil_high: pd.Series
+    dil_low: pd.Series
 
 
 @dataclass(frozen=True)
-class PlotConditionIds:
+class PlotConditions:
     sim_type: Union[Literal["cv"], Literal["znd"]]  # this can probably be smarter but whatever
-    co2: ResultConditionIds
-    n2_mf: ResultConditionIds
-    n2_tad: ResultConditionIds
+    co2: ResultConditions
+    n2_mf: ResultConditions
+    n2_tad: ResultConditions
 
 
 class SimulationPlots:
@@ -302,7 +315,7 @@ class SimulationPlots:
         self,
         data: pd.DataFrame,
         data_column: DataColumn,
-        condition_ids: PlotConditionIds,
+        condition_ids: PlotConditions,
         show_title: bool = False,
         save_to: Optional[str] = None,
         suptitle_fontsize: int = 12,
@@ -390,7 +403,7 @@ class SimulationPlots:
         self,
         data: pd.DataFrame,
         data_column: DataColumn,
-        condition_ids: PlotConditionIds,
+        conditions: PlotConditions,
         ignore_middle: bool,
     ):
         is_reaction_data = "reaction" in data.columns
@@ -413,10 +426,12 @@ class SimulationPlots:
         relative_amounts = ("dil_low", "dil_high")
         for dilution_type in dilution_types:
             for relative_amount in relative_amounts:
+                these_conditions = conditions.__dict__[dilution_type].__dict__[relative_amount]
                 self.__dict__[dilution_type].__dict__[relative_amount].plot_data(
-                    data=data[data["condition_id"] == condition_ids.__dict__[dilution_type].__dict__[relative_amount]],
+                    data=data[data["condition_id"] == these_conditions.id],
                     data_column=data_column,
                     result_designator_column=result_designator_column,
+                    conditions=these_conditions,
                 )
 
 
@@ -432,59 +447,59 @@ def validate_sim_type(maybe: str) -> Union[Literal["cv"], Literal["znd"]]:
         raise RuntimeError(f"Invalid simulation type: {maybe}")
 
 
-def get_condition_ids(conditions: pd.DataFrame) -> tuple[PlotConditionIds]:
+def get_condition_ids(conditions: pd.DataFrame) -> tuple[PlotConditions]:
     all_condition_ids = []
     for sim_type, sim_type_conditions in conditions.groupby("sim_type"):
         all_condition_ids.append(
-            PlotConditionIds(
+            PlotConditions(
                 sim_type=validate_sim_type(str(sim_type)),
-                co2=ResultConditionIds(
+                co2=ResultConditions(
                     dil_high=sim_type_conditions[
                         (
                             (sim_type_conditions["diluent"] == "CO2")
                             & (sim_type_conditions["match"].isna())
                             & (sim_type_conditions["dil_condition"] == "high")
                         )
-                    ]["id"].values[0],
+                    ].iloc[0],
                     dil_low=sim_type_conditions[
                         (
                             (sim_type_conditions["diluent"] == "CO2")
                             & (sim_type_conditions["match"].isna())
                             & (sim_type_conditions["dil_condition"] == "low")
                         )
-                    ]["id"].values[0],
+                    ].iloc[0],
                 ),
-                n2_mf=ResultConditionIds(
+                n2_mf=ResultConditions(
                     dil_high=sim_type_conditions[
                         (
                             (sim_type_conditions["diluent"] == "N2")
                             & (sim_type_conditions["match"] == "mf")
                             & (sim_type_conditions["dil_condition"] == "high")
                         )
-                    ]["id"].values[0],
+                    ].iloc[0],
                     dil_low=sim_type_conditions[
                         (
                             (sim_type_conditions["diluent"] == "N2")
                             & (sim_type_conditions["match"] == "mf")
                             & (sim_type_conditions["dil_condition"] == "low")
                         )
-                    ]["id"].values[0],
+                    ].iloc[0],
                 ),
-                n2_tad=ResultConditionIds(
+                n2_tad=ResultConditions(
                     dil_high=sim_type_conditions[
                         (
                             (sim_type_conditions["diluent"] == "N2")
                             & (sim_type_conditions["match"] == "tad")
                             & (sim_type_conditions["dil_condition"] == "high")
                         )
-                    ]["id"].values[0],
+                    ].iloc[0],
                     dil_low=sim_type_conditions[
                         (
                             (sim_type_conditions["diluent"] == "N2")
                             & (sim_type_conditions["match"] == "tad")
                             & (sim_type_conditions["dil_condition"] == "low")
                         )
-                    ]["id"].values[0],
+                    ].iloc[0],
                 ),
             )
         )
