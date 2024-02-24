@@ -561,8 +561,8 @@ def calculate_westbrook_only(
     #  Westbrook time based on 50% temperature rise
     temp_west = 0.5*(temp_final - temp_vn) + temp_vn
     t_west = np.nanmax(cv_out_0.time[cv_out_0.temperature < temp_west], initial=0)
+    # todo: investigate this if data still appears funky after logging fixes
 
-    # todo: save temp_west, t_west, znd_result.velocity to conditions table
     if db is not None:
         with db.connect() as con:
             con.execute(
