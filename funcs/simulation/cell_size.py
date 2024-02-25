@@ -20,7 +20,23 @@ import numpy as np
 
 import sdtoolbox
 import sdtoolbox.output
+from sdtoolbox.config import Solver
 from .thermo import diluted_species_dict
+
+
+@dataclasses.dataclass(frozen=True)
+class CvConfig:
+    max_tries: int
+    max_step: float
+    end_time: float
+    solver_method: Solver
+
+
+@dataclasses.dataclass(frozen=True)
+class ZndConfig:
+    max_tries: int
+    max_step: float
+    end_time: float
 
 
 @dataclasses.dataclass(frozen=True)
@@ -41,14 +57,11 @@ class CvResult:
 def wrapped_cvsolve(
     gas,
     limit_species_idx: int,
-    max_tries=10,
-    t_end=1e-6,
-    max_step=1e-5,
+    config: CvConfig,
     induction_time_only: bool = False,
     rxn_indices: Optional[list[int]] = None,
     spec_indices: Optional[list[int]] = None,
     db: Optional[sdtoolbox.output.SimulationDatabase] = None,
-    batch_threshold: int = 10_000,
 ):
     """
     Look jack, I don't have time for your `breaking` malarkey
@@ -58,31 +71,31 @@ def wrapped_cvsolve(
 
     Parameters
     ----------
-    gas : ct.Solution
-        gas object to work on
+    gas : gas object to work on
     limit_species_idx : Index of limit species in Solution object
-    max_tries : int
-        how motivated are you
-    t_end : float
-        initial end time, which is doubled each iteration
-    max_step : float
-        maximum cvsolve step time
+    config : CV simulation configuration parameters
     induction_time_only : Everything else is None
+    rxn_indices : indices of reactions of interest within `gas`
+    spec_indices : indices of species of interest within `gas`
+    db: optional simulation database for data export
 
     Returns
     -------
-    idk whatever was supposed to come out in the first place, it's late
+    Reduced CV detonation simulation result
     """
+    t_end = config.end_time
+    max_step = config.max_step
+
     tries = 0
     # if you don't reset the Solution's properties it'll go crazy during the
     # iteration process. Iterations are supposed to be independent, so that's...
     # you know, pretty bad
     init_tpx = gas.TPX
     out = None
-    while tries <= max_tries:
+    while tries < config.max_tries:
         gas.TPX = init_tpx
         tries += 1
-        if tries < max_tries:
+        if tries < config.max_tries:
             # this exception is broad on purpose.
             # noinspection PyBroadException
             try:
@@ -93,11 +106,11 @@ def wrapped_cvsolve(
                     rxn_indices=rxn_indices,
                     spec_indices=spec_indices,
                     db=db,
-                    batch_threshold=batch_threshold,
                     run_no=tries,
+                    method=config.solver_method
                 )
                 break
-            except:  # noqa: E722  # todo: delete previous run?
+            except:  # noqa: E722
                 t_end *= 2
                 max_step *= 2
         else:
@@ -109,8 +122,8 @@ def wrapped_cvsolve(
                 rxn_indices=rxn_indices,
                 spec_indices=spec_indices,
                 db=db,
-                batch_threshold=batch_threshold,
                 run_no=tries,
+                method=config.solver_method
             )
 
     if induction_time_only:
@@ -133,41 +146,38 @@ def wrapped_zndsolve(
     gas,
     base_gas,
     cj_speed,
-    t_end,
-    max_step,
-    max_tries=5,
+    config: ZndConfig,
     rxn_indices: Optional[list[int]] = None,
     spec_indices: Optional[list[int]] = None,
     db: Optional[sdtoolbox.output.SimulationDatabase] = None,
-    batch_threshold: int = 10_000,
 ):
+    max_step = config.max_step
     tries = 0
     init_tpx = gas.TPX
     init_tpx_base = base_gas.TPX
     out = None
-    while tries <= max_tries:
+    while tries < config.max_tries:
         # retry the simulation if the initial time step doesn't work
         # drop time step by one order of magnitude every failure
         gas.TPX = init_tpx
         base_gas.TPX = init_tpx_base
         tries += 1
-        if tries < max_tries:
+        if tries < config.max_tries:
             try:
                 out = sdtoolbox.znd.zndsolve(
                     gas,
                     base_gas,
                     cj_speed,
                     advanced_output=True,
-                    t_end=t_end,
+                    t_end=config.end_time,
                     max_step=max_step,
                     rxn_indices=rxn_indices,
                     spec_indices=spec_indices,
                     db=db,
-                    batch_threshold=batch_threshold,
                     run_no=tries,
                 )
                 break
-            except (ct.CanteraError, ValueError):  # todo: delete previous run?
+            except (ct.CanteraError, ValueError):
                 max_step /= 10.
         else:
             # let it break if it's gonna break after max tries
@@ -176,12 +186,11 @@ def wrapped_zndsolve(
                 base_gas,
                 cj_speed,
                 advanced_output=True,
-                t_end=t_end,
+                t_end=config.end_time,
                 max_step=max_step,
                 rxn_indices=rxn_indices,
                 spec_indices=spec_indices,
                 db=db,
-                batch_threshold=batch_threshold,
                 run_no=tries,
             )
     return ZndResult(
@@ -246,6 +255,19 @@ def calculate(
     cv_end_time: float = 1e-6,
     max_step_cv: float = 5e-7,
 ) -> CellSizeResults:
+    # leaving the call signature for this alone for now in case I need old stuff to work. Not production software.
+    cv_config = CvConfig(
+        max_tries=max_tries_cv,
+        max_step=max_step_cv,
+        end_time=cv_end_time,
+        solver_method="Radau",
+    )
+    znd_config = ZndConfig(
+        max_tries=max_tries_znd,
+        max_step=max_step_znd,
+        end_time=2e-3,
+    )
+
     base_gas = build_gas_object(
         mechanism=mechanism,
         equivalence=equivalence,
@@ -289,9 +311,7 @@ def calculate(
         gas=gas,
         base_gas=base_gas,
         cj_speed=cj_speed,
-        t_end=2e-3,
-        max_step=max_step_znd,
-        max_tries=max_tries_znd,
+        config=znd_config,
     )
 
     # Find CV parameters including effective activation energy
@@ -318,24 +338,20 @@ def calculate(
 
     # cv_out_0 = sdtoolbox.cv.cvsolve(gas)
     cv_out_0 = wrapped_cvsolve(
-        gas,
-        limit_species_idx,
-        max_tries_cv,
-        cv_end_time,
-        max_step_cv,
+        gas=gas,
+        limit_species_idx=limit_species_idx,
         induction_time_only=False,
+        config=cv_config,
     )
 
     temp_b = temp_vn * 0.98
     gas.TPX = temp_b, press_vn, q
     # cv_out_1 = sdtoolbox.cv.cvsolve(gas, t_end=10e-6)
     cv_out_1 = wrapped_cvsolve(
-        gas,
-        limit_species_idx,
-        max_tries_cv,
-        cv_end_time,
-        max_step_cv,
+        gas=gas,
+        limit_species_idx=limit_species_idx,
         induction_time_only=True,
+        config=cv_config,
     )
 
     # Approximate effective activation energy for CV explosion
@@ -429,6 +445,7 @@ def calculate_westbrook_only(
     fuel: str,
     oxidizer: str,
     equivalence: float,
+    cv_config: CvConfig,
     diluent: Optional[str],
     match: Optional[str],
     dil_condition: str,
@@ -436,16 +453,9 @@ def calculate_westbrook_only(
     cj_speed: float,
     perturbed_reaction: Optional[float] = None,
     perturbation_fraction: float = 1e-2,
-    max_tries_znd: int = 10,
-    max_step_znd: float = 1e-4,
-    znd_end_time: float = 2e-3,
-    max_tries_cv: int = 15,
-    cv_end_time: float = 1e-6,
-    max_step_cv: float = 5e-7,
     rxn_indices: Optional[list[int]] = None,
     spec_indices: Optional[list[int]] = None,
     db_path: Optional[str] = None,
-    batch_threshold: int = 10_000,
 ) -> CellSizeResults:
     if db_path is not None:
         db = sdtoolbox.output.SqliteDataBase(path=db_path)
@@ -480,6 +490,9 @@ def calculate_westbrook_only(
     )
 
     if db is not None:
+        # I should probably move these to the CV portion since ZND is no longer needed, but I'm leaving it here in case
+        # we want to put ZND simulations back in at a later date. Disable DB write since there will be no simulation
+        # data to log.
         conditions = sdtoolbox.output.Conditions(
             sim_type=sdtoolbox.output.SimulationType.Znd.value,
             mech=mechanism,
@@ -493,24 +506,13 @@ def calculate_westbrook_only(
             diluent=diluent,
             dil_mf=diluent_mol_frac,
         )
-        sim_db = sdtoolbox.output.SimulationDatabase(db=db, conditions=conditions)
-        conditions_ids.append(str(sim_db.conditions_id))
+        sim_db = None  # instantiating a SimulationDatabase here will add unnecessary ZND rows to the database
+        # sim_db = sdtoolbox.output.SimulationDatabase(db=db, conditions=conditions)
+        # conditions_ids.append(str(sim_db.conditions_id))
     else:
         sim_db = None
 
-    # SOLVE ZND DETONATION ODES
-    znd_result = wrapped_zndsolve(
-        gas=gas,
-        base_gas=base_gas,
-        cj_speed=cj_speed,
-        t_end=znd_end_time,
-        max_step=max_step_znd,
-        max_tries=max_tries_znd,
-        rxn_indices=rxn_indices,
-        spec_indices=spec_indices,
-        db=sim_db,
-        batch_threshold=batch_threshold,
-    )
+    znd_velocity = cj_speed * base_gas.density / gas.density
 
     # Find CV parameters including effective activation energy
     gas.TPX = initial_temp, initial_press, q
@@ -542,16 +544,13 @@ def calculate_westbrook_only(
         conditions_ids.append(str(sim_db.conditions_id))
 
     cv_out_0 = wrapped_cvsolve(
-        gas,
-        limit_species_idx,
-        max_tries_cv,
-        cv_end_time,
-        max_step_cv,
+        gas=gas,
+        limit_species_idx=limit_species_idx,
+        config=cv_config,
         induction_time_only=False,
         rxn_indices=rxn_indices,
         spec_indices=spec_indices,
         db=sim_db,
-        batch_threshold=batch_threshold,
     )
 
     gas.TPX = temp_vn, press_vn, q
@@ -560,8 +559,28 @@ def calculate_westbrook_only(
 
     #  Westbrook time based on 50% temperature rise
     temp_west = 0.5*(temp_final - temp_vn) + temp_vn
-    t_west = np.nanmax(cv_out_0.time[cv_out_0.temperature < temp_west], initial=0)
-    # todo: investigate this if data still appears funky after logging fixes
+
+    mask = cv_out_0.temperature <= temp_west
+    t_left = cv_out_0.time[mask][-1]
+    temp_left = cv_out_0.temperature[mask][-1]
+
+    mask = cv_out_0.temperature > temp_west
+    t_right = cv_out_0.time[mask][0]
+    temp_right = cv_out_0.temperature[mask][0]
+
+    t_west = t_left + ((t_right - t_left) * (temp_west - temp_left)) / (temp_right - temp_left)
+    induction_length = ModelResults(
+        westbrook=t_west*znd_velocity,
+        gavrikov=np.NaN,
+        ng=np.NaN,
+    )
+
+    # calculate and return cell size results
+    cell_size = ModelResults(
+        westbrook=_cell_size_westbrook(induction_length=induction_length.westbrook),
+        gavrikov=np.NaN,
+        ng=np.NaN,
+    )
 
     if db is not None:
         with db.connect() as con:
@@ -574,7 +593,9 @@ def calculate_westbrook_only(
                     temp_west = :temp_west,
                     t_ind = :t_ind,
                     u_znd = :u_znd,
-                    u_cj = :u_cj
+                    u_cj = :u_cj,
+                    cell_size = :cell_size,
+                    end = CURRENT_TIMESTAMP
                 WHERE
                     id in ({','.join(conditions_ids)});
                 """,
@@ -582,23 +603,12 @@ def calculate_westbrook_only(
                     "temp_vn": temp_vn,
                     "temp_west": temp_west,
                     "t_ind": t_west,
-                    "u_znd": znd_result.velocity,
+                    "u_znd": znd_velocity,
                     "u_cj": cj_speed,
+                    "cell_size": cell_size.westbrook
                 }
             )
             con.commit()
-    induction_length = ModelResults(
-        westbrook=t_west*znd_result.velocity,
-        gavrikov=np.NaN,
-        ng=np.NaN,
-    )
-
-    # calculate and return cell size results
-    cell_size = ModelResults(
-        westbrook=_cell_size_westbrook(induction_length=induction_length.westbrook),
-        gavrikov=np.NaN,
-        ng=np.NaN,
-    )
 
     if perturbed_reaction is None:
         reaction_equation = None

@@ -6,6 +6,7 @@ from typing import Literal, Optional, Union
 import pandas as pd
 import seaborn as sns
 from matplotlib import pyplot as plt
+from matplotlib.ticker import FuncFormatter
 
 
 def set_palette():
@@ -28,35 +29,36 @@ def load_conditions_data(con: Connection) -> pd.DataFrame:
 def load_reactions_data(con: Connection) -> pd.DataFrame:
     return pd.read_sql_query(
         """
-    select
-        rc.condition_id,
-        rc.run_no,
-        rc.sim_type,
-        rc.reaction,
-        rc.diluent,
-        rc.dil_mf,
-        rc.time,
-        rc.fwd_rate_constant,
-        rc.fwd_rate_of_progress,
-        b.temperature,
-        b.pressure
-    from
-        (
-            (
         select
-            *
+            rc.condition_id,
+            rc.run_no,
+            rc.sim_type,
+            rc.reaction,
+            rc.diluent,
+            rc.dil_mf,
+            rc.time,
+            rc.fwd_rate_constant,
+            rc.fwd_rate_of_progress,
+            b.temperature,
+            b.pressure,
+            b.velocity
         from
-            reactions r
-        inner join conditions c
-            on
-            c.id = r.condition_id
-            ) rc
-    inner join bulk_properties b
-            on
-        b.condition_id = rc.condition_id
-        AND b.time = rc.time
-        AND b.run_no = rc.run_no
-       )
+            (
+                (
+            select
+                *
+            from
+                reactions r
+            inner join conditions c
+                on
+                c.id = r.condition_id
+                ) rc
+        inner join bulk_properties b
+                on
+            b.condition_id = rc.condition_id
+            AND b.time = rc.time
+            AND b.run_no = rc.run_no
+           )
         """,
         con,
     )
@@ -77,7 +79,8 @@ def load_species_data(con: Connection) -> pd.DataFrame:
             rc.concentration,
             rc.creation_rate,
             b.temperature,
-            b.pressure
+            b.pressure,
+            b.velocity
         from
             (
                 (
@@ -106,7 +109,7 @@ class DataColumn:
     plot_name: str
     data_type: Union[Literal["reaction"], Literal["species"]]
     units: Optional[str]
-    scale_by: Optional[float] = None
+    offset: Optional[float] = None
 
 
 class Species:
@@ -128,42 +131,45 @@ class DataColumnSpecies:
         plot_name="Mole Fraction",
         units="-",
         data_type="species",
+        offset=1e-1,
     )
     concentration = DataColumn(
         column_name="concentration",
         plot_name="Concentration",
         units=r"\frac{ \mathrm{kmol} }{ \mathrm{m}^{3} }",
         data_type="species",
-        scale_by=1_000,
+        offset=1e-2,
     )
     creation_rate = DataColumn(
         column_name="creation_rate",
         plot_name="Creation Rate",
         units=r"\frac{ \mathrm{kmol} }{ \mathrm{m}^{3} \cdot \mathrm{s} }",
         data_type="species",
-        scale_by=10_000_000,
+        offset=1e8,
     )
 
 
 class DataColumnReaction:
     fwd_rate_constant = DataColumn(
         column_name="fwd_rate_constant",
-        plot_name="Forward Rate\nConstant",
+        plot_name="Forward Rate Constant",
         units=None,
         data_type="reaction",
+        offset=1e9,
     )
     fwd_rate_of_progress = DataColumn(
         column_name="fwd_rate_of_progress",
-        plot_name="Forward Rate of\nProgress",
+        plot_name="Forward Rate of Progress",
         units=r"\frac{ \mathrm{kmol} }{ \mathrm{m}^{3} \cdot \mathrm{s} }",
-        scale_by=10_000,
         data_type="reaction",
+        offset=1e6,
     )
 
 
 class SimulationPlot:
     def __init__(
         self,
+        velocity: Optional[plt.Axes],
         conditions: plt.Axes,
         results: plt.Axes,
         relative_dilution: Union[Literal["High"], Literal["Low"]],
@@ -172,6 +178,7 @@ class SimulationPlot:
         axis_fontsize: int = 6,
         legend_fontsize: int = 5,
     ):
+        self.velocity = velocity
         self.temperature = conditions
         self.pressure = conditions.twinx()
         self.results = results
@@ -184,27 +191,32 @@ class SimulationPlot:
         self._axis_fontsize = axis_fontsize
         self._legend_fontsize = legend_fontsize
 
-        for axes in (self.temperature, self.pressure, self.results):
+        all_axes = [self.temperature, self.pressure, self.results]
+        if self.velocity is not None:
+            all_axes.append(self.velocity)
+        for axes in all_axes:
             axes.yaxis.get_offset_text().set_fontsize(self._axis_fontsize)
+            axes.yaxis.set_major_formatter(FuncFormatter(lambda x, pos: f"{x:1.2f}"))
             for ax in (axes.xaxis, axes.yaxis):
                 ax.set_tick_params(labelsize=self._axis_fontsize)
         self.set_title()
 
     def align_all_axes(self):
-        self.pressure.yaxis.set_label_coords(1.1, 0.5)
-        self.temperature.yaxis.set_label_coords(-0.1, 0.5)
-        self.results.yaxis.set_label_coords(-0.1, 0.5)  # wtf why don't these line up
+        self.pressure.yaxis.set_label_coords(1.125, 0.5)
+        self.temperature.yaxis.set_label_coords(-0.125, 0.5)
+        self.results.yaxis.set_label_coords(-0.125, 0.5)
 
     def set_dil_mf(self, dil_mf: float):
         self._dil_mf = dil_mf
         self.set_title()
 
     def set_title(self):
+        title_axes = self.velocity or self.temperature
         title = f"{self.relative_dilution} dilution"
         if self._dil_mf is not None:
             title += r" $\left(\chi_" + f"{{{self.diluent.as_tex_string()}}} = {self._dil_mf:3.2f}" + r"\right)$"
         # we should be able to set this on temperature or pressure since they share a subplot
-        self.temperature.set_title(title, fontsize=self._title_fontsize)
+        title_axes.set_title(title, fontsize=self._title_fontsize)
 
     def plot_data(
         self,
@@ -220,35 +232,52 @@ class SimulationPlot:
         data_column: column designating data to plot in the lower half of the combined plot
         result_designator_column : column designating reaction or species values, each of which will have a data plot
             entry
+        conditions : series of current plot's test conditions and results
         """
         plot_data = data.sort_values("time")
         time_scale = 1_000_000  # s -> us
-        temp_scale = 1/1_000  # K -> kK
+        temp_scale = 1e-3
+        press_scale = 1e-7
 
         plot_data["time"] *= time_scale
-        plot_data["pressure"] /= 1_000_000  # Pa -> MPa
+        plot_data["pressure"] *= press_scale
         plot_data["temperature"] *= temp_scale
-        induction_time = conditions.t_ind * time_scale
-        induction_temp = conditions.temp_west * temp_scale
 
         dil_mfs = plot_data["dil_mf"].unique()
-        if len(dil_mfs) != 1:
+        n_dil_mfs = len(dil_mfs)
+        if n_dil_mfs > 1:
             raise RuntimeError(f"Data does not have a unique `dil_mf`: {dil_mfs}")
+        elif n_dil_mfs < 1:
+            raise RuntimeError("Data does not have any `dil_mf`")
         self.set_dil_mf(dil_mfs[0])
 
-        line_pressure = self.pressure.plot(plot_data["time"], plot_data["pressure"], ls="-", color="C1", label="P")
+        line_pressure = self.pressure.plot(plot_data["time"], plot_data["pressure"], ls="--", color="C1", label="P")
         line_temperature = self.temperature.plot(
-            plot_data["time"], plot_data["temperature"], ls="--", color="C0", label="T"
+            plot_data["time"], plot_data["temperature"], ls="-", color="C0", label="T"
         )
+
+        end_time = plot_data["time"].max()
+        self.temperature.set_xlim(0, end_time)
+        self.temperature.set_xlim(0, end_time)
+        self.results.set_xlim(0, end_time)
+
+        if self.velocity is not None:
+            self.velocity.plot(plot_data["time"], plot_data["velocity"], "C5")
+            self.velocity.set_xlim(0, end_time)
+            self.velocity.set_ylabel("Velocity (m/s)", fontsize=self._axis_fontsize, verticalalignment="baseline")
 
         # Induction time is determined by a temperature threshold in the CV simulations, so that is where we plot it
         if conditions.sim_type == "cv":
-            self.temperature.plot(induction_time, induction_temp, 'x', color="C0", ms=5)
+            induction_time = conditions.t_ind * time_scale
             for ax in (self.temperature, self.results):
-                ax.axvline(induction_time, zorder=-1, color="k", alpha=0.2)
+                ax.axvspan(0, induction_time, zorder=-1, color="#eee")
 
-        self.pressure.set_ylabel("Pressure (MPa)", fontsize=self._axis_fontsize)
-        self.temperature.set_ylabel("Temperature\n(K x1,000)", fontsize=self._axis_fontsize)
+        self.pressure.set_ylabel(
+            f"Pressure (Pa)\nx{press_scale}", fontsize=self._axis_fontsize, verticalalignment="top"
+        )
+        self.temperature.set_ylabel(
+            f"Temperature (K)\nx{temp_scale:1.1e}", fontsize=self._axis_fontsize, verticalalignment="bottom"
+        )
 
         lines = line_pressure + line_temperature
         labels = [line.get_label() for line in lines]
@@ -268,7 +297,7 @@ class SimulationPlot:
             ls = line_styles[i % n_styles]
             lines += self.results.plot(
                 data_group["time"],
-                data_group[data_column.column_name] / (data_column.scale_by or 1),
+                data_group[data_column.column_name] / (data_column.offset or 1),
                 color=f"C{color_idx}",
                 label=label,
                 ls=ls,
@@ -280,8 +309,8 @@ class SimulationPlot:
             ylabel += (
                 r" $\left("
                 + f"{data_column.units}"
-                + (f"x{data_column.scale_by:,}" if data_column.scale_by else "")
                 + r"\right)$"
+                + (f"\nx{1/data_column.offset:1.1e}" if data_column.offset else "")
             )
         self.results.legend(lines, labels, fontsize=self._legend_fontsize)
         self.results.set_ylabel(ylabel, fontsize=self._axis_fontsize)
@@ -334,7 +363,9 @@ class SimulationPlots:
         # noinspection PyTypeChecker
         self.n2_tad: SimulationPlotRow = None
 
-        self._create_plots(ignore_middle)
+        plot_velocity = condition_ids.sim_type == "znd"
+
+        self._create_plots(ignore_middle, plot_velocity)
 
         self.co2.row.set_title("CO$_{2}$ diluted", fontsize=row_fontsize)
         if not ignore_middle:
@@ -351,12 +382,51 @@ class SimulationPlots:
             )
 
         self._plot_data(data, data_column, condition_ids, ignore_middle)
+
+        self._share_ylim()
+
         self._figure.align_ylabels()
 
         if isinstance(save_to, str):
             self._figure.savefig(save_to)
 
-    def _create_plots(self, ignore_middle: bool):
+    def _share_ylim(self):
+        axes = []
+        temp_bounds = [1e16, 0]
+        press_bounds = [1e16, 0]
+        result_bounds = [1e16, 0]
+        vel_bounds = [1e16, 0]
+        for row in (self.co2, self.n2_mf, self.n2_tad):
+            if row is not None:
+                for ax in (row.dil_low, row.dil_high):
+                    axes.append(ax)
+
+                    y_lim = ax.temperature.get_ylim()
+                    temp_bounds[0] = min(temp_bounds[0], y_lim[0])
+                    temp_bounds[1] = max(temp_bounds[1], y_lim[1])
+
+                    y_lim = ax.pressure.get_ylim()
+                    press_bounds[0] = min(press_bounds[0], y_lim[0])
+                    press_bounds[1] = max(press_bounds[1], y_lim[1])
+
+                    y_lim = ax.results.get_ylim()
+                    result_bounds[0] = min(result_bounds[0], y_lim[0])
+                    result_bounds[1] = max(result_bounds[1], y_lim[1])
+
+                    if ax.velocity is not None:
+                        y_lim = ax.velocity.get_ylim()
+                        vel_bounds[0] = min(vel_bounds[0], y_lim[0])
+                        vel_bounds[1] = max(vel_bounds[1], y_lim[1])
+
+        for ax in axes:
+            ax.temperature.set_ylim(*temp_bounds)
+            ax.pressure.set_ylim(*press_bounds)
+            ax.results.set_ylim(*result_bounds)
+
+            if ax.velocity is not None:
+                ax.velocity.set_ylim(*vel_bounds)
+
+    def _create_plots(self, ignore_middle: bool, plot_velocity: bool):
         self._figure = plt.figure(figsize=(8.5, 11))
 
         n2 = Species("N", 2)
@@ -376,17 +446,29 @@ class SimulationPlots:
             # This little guy keeps the high/low dilution titles from overlapping with the row titles
             row_plots_and_title_gs = row_gs.subgridspec(2, 1, height_ratios=[1, 100])
 
-            row_plots = row_plots_and_title_gs[1].subgridspec(2, 2, hspace=0, wspace=0.4)
+            n_windows_per_plot = 3 if plot_velocity else 2
+
+            row_plots = row_plots_and_title_gs[1].subgridspec(n_windows_per_plot, 2, hspace=0, wspace=0.4)
             row_axes = []
             relative_dilutions = ["Low", "High"]
             for col, relative_dilution in enumerate(relative_dilutions):
                 relative_dilution: Union[Literal["Low"], Literal["High"]]
-                ax_conditions = self._figure.add_subplot(row_plots[0, col])
-                ax_conditions.get_xaxis().set_visible(False)
 
-                ax_results = self._figure.add_subplot(row_plots[1, col])
+                plot_idx = 0
+                if plot_velocity:
+                    ax_velocity = self._figure.add_subplot(row_plots[0, col])
+                    ax_velocity.get_xaxis().set_visible(False)
+                    plot_idx += 1
+                else:
+                    ax_velocity = None
+                ax_conditions = self._figure.add_subplot(row_plots[plot_idx, col])
+                ax_conditions.get_xaxis().set_visible(False)
+                plot_idx += 1
+
+                ax_results = self._figure.add_subplot(row_plots[plot_idx, col])
                 row_axes.append(
                     SimulationPlot(
+                        velocity=ax_velocity,
                         conditions=ax_conditions,
                         results=ax_results,
                         relative_dilution=relative_dilution,
@@ -508,12 +590,12 @@ def get_condition_ids(conditions: pd.DataFrame) -> tuple[PlotConditions]:
 
 def main():
     set_palette()
-    show_plots = True
-    save_plots = False
+    show_plots = False
+    save_plots = True
     show_title = True
     ignore_middle_plot = True
 
-    db_path = "/home/mick/DetResearch/scripts/final_manuscript/co2_reaction_study_less_znd.sqlite"
+    db_path = "/home/mick/DetResearch/scripts/final_manuscript/co2_reaction_study.sqlite"
     con = sqlite3.connect(db_path)
 
     conditions = load_conditions_data(con)
@@ -547,6 +629,19 @@ def main():
                     save_to=save_to,
                     ignore_middle=ignore_middle_plot,
                 )
+
+    # zoomed in
+    data_column = DataColumnReaction.fwd_rate_of_progress
+    condition_ids = all_condition_ids[0]  # will break here if we add ZND back in
+    SimulationPlots(
+        data=reactions[~reactions.reaction.str.startswith("CO + OH")],
+        condition_ids=condition_ids,
+        data_column=data_column,
+        show_title=show_title,
+        save_to=f"plots/cv - {data_column.data_type}- {data_column.column_name} (zoomed).pdf",
+        ignore_middle=ignore_middle_plot,
+    )
+
     if show_plots:
         plt.show()
 

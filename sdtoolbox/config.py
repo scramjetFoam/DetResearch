@@ -13,6 +13,9 @@ Used by:
         PostReflectedShock_fr
         PostReflectedShock_eq
 """
+from typing import Literal
+
 ERRFT = 1e-4
 ERRFV = 1e-4
 volumeBoundRatio = 5
+Solver = Literal["RK45", "RK23", "DOP853", "Radau", "BDF", "LSODA"]

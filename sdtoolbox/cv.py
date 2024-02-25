@@ -33,15 +33,14 @@ Tested with:
 Under these operating systems:
     Windows 8.1, Windows 10, Linux (Debian 9)
 """
-import sqlite3
 from typing import Optional
 
 import cantera as ct
 import numpy as np
-from retry import retry
 from scipy.integrate import solve_ivp
 from scipy.integrate._ivp.ivp import OdeResult
 
+from sdtoolbox.config import Solver
 from sdtoolbox.output import SimulationDatabase, ReactionData, SpeciesData, BulkPropertiesData
 
 
@@ -49,98 +48,8 @@ class CVSys(object):
     def __init__(
         self,
         gas: ct.Solution,
-        rxn_indices: Optional[list[int]] = None,
-        spec_indices: Optional[list[int]] = None,
-        db: Optional[SimulationDatabase] = None,
-        batch_threshold: int = 10_000,
-        run_no: int = 1,
     ):
         self.gas = gas
-        self.rxn_indices = rxn_indices
-        self.spec_indices = spec_indices
-        self.db = db
-        self.rxn_to_store: list[ReactionData] = []
-        self.spec_to_store: list[SpeciesData] = []
-        self.bulk_properties_to_store: list[BulkPropertiesData] = []
-        self.batch_threshold = batch_threshold
-        self.run_no = run_no
-        self.can_store_reaction_data = None not in (self.rxn_indices, self.db) and len(self.rxn_indices) > 0
-        self.can_store_species_data = None not in (self.spec_indices, self.db) and len(self.spec_indices) > 0
-        self.can_store_bulk_properties_data = self.db is not None
-
-    def __del__(self):
-        if self.can_store_reaction_data and len(self.rxn_to_store) > 0:
-            self.store_all_rxn_data()
-
-        if self.can_store_species_data and len(self.spec_to_store) > 0:
-            self.store_all_spec_data()
-            self.store_all_rxn_data()
-
-        if self.can_store_bulk_properties_data and len(self.bulk_properties_to_store) > 0:
-            self.store_all_bulk_properties_data()
-
-        if self.db is not None:
-            try:
-                self.db.reactions.cur.connection.close()
-            except:
-                pass
-            try:
-                self.db.species.cur.connection.close()
-            except:
-                pass
-            try:
-                self.db.conditions.cur.close()
-            except:
-                pass
-            try:
-                self.db.bulk_properties.cur.close()
-            except:
-                pass
-
-    @retry(tries=10, backoff=2, max_delay=2)
-    def store_all_rxn_data(self):
-        for data in self.rxn_to_store:
-            try:
-                self.db.reactions.insert_or_update(data, commit=False)
-            except sqlite3.ProgrammingError:
-                self.db.reconnect()
-                self.db.reactions.insert_or_update(data, commit=False)
-        try:
-            self.db.reactions.cur.connection.commit()
-        except sqlite3.ProgrammingError:
-            self.db.reconnect()
-            self.db.reactions.cur.connection.commit()
-        self.rxn_to_store.clear()
-
-    @retry(tries=10, backoff=2, max_delay=2)
-    def store_all_spec_data(self):
-        for data in self.spec_to_store:
-            try:
-                self.db.species.insert_or_update(data, commit=False)
-            except sqlite3.ProgrammingError:
-                self.db.reconnect()
-                self.db.species.insert_or_update(data, commit=False)
-        try:
-            self.db.species.cur.connection.commit()
-        except sqlite3.ProgrammingError:
-            self.db.reconnect()
-            self.db.species.cur.connection.commit()
-        self.spec_to_store.clear()
-
-    @retry(tries=10, backoff=2, max_delay=2)
-    def store_all_bulk_properties_data(self):
-        for data in self.bulk_properties_to_store:
-            try:
-                self.db.bulk_properties.insert_or_update(data, commit=False)
-            except sqlite3.ProgrammingError:
-                self.db.reconnect()
-                self.db.bulk_properties.insert_or_update(data, commit=False)
-        try:
-            self.db.bulk_properties.cur.connection.commit()
-        except sqlite3.ProgrammingError:
-            self.db.reconnect()
-            self.db.bulk_properties.cur.connection.commit()
-        self.bulk_properties_to_store.clear()
         
     def __call__(self, t, y):
         """
@@ -170,54 +79,9 @@ class CVSys(object):
         # Species equations
         dYdt = self.gas.net_production_rates*self.gas.molecular_weights/self.gas.density
 
-        if self.can_store_reaction_data:
-            for i in self.rxn_indices:
-                data = ReactionData(
-                    condition_id=self.db.conditions_id,
-                    run_no=self.run_no,
-                    time=t,
-                    reaction=self.gas.reaction_equation(i),
-                    fwd_rate_constant=self.gas.forward_rate_constants[i],
-                    fwd_rate_of_progress=self.gas.forward_rates_of_progress[i],
-                )
-                self.rxn_to_store.append(data)
-
-            if len(self.rxn_to_store) >= self.batch_threshold:
-                self.store_all_rxn_data()
-
-        if self.can_store_species_data:
-            for j in self.spec_indices:
-                species = self.gas.species(j)
-                data = SpeciesData(
-                    condition_id=self.db.conditions_id,
-                    run_no=self.run_no,
-                    time=t,
-                    species=species,
-                    mole_frac=self.gas.mole_fraction_dict().get(species.name, 0),
-                    concentration=self.gas.concentrations[j],
-                    creation_rate=self.gas.creation_rates[j],
-                )
-                self.spec_to_store.append(data)
-
-            if len(self.spec_to_store) >= self.batch_threshold:
-                self.store_all_spec_data()
-
-        if self.can_store_bulk_properties_data:
-            data = BulkPropertiesData(
-                condition_id=self.db.conditions_id,
-                run_no=self.run_no,
-                time=t,
-                temperature=self.gas.T,
-                pressure=self.gas.P,
-            )
-            self.bulk_properties_to_store.append(data)
-
-            if len(self.bulk_properties_to_store) >= self.batch_threshold:
-                self.store_all_bulk_properties_data()
-        
         return np.hstack((dTdt, dYdt))
-    
-   
+
+
 def cvsolve(
     gas: ct.Solution,
     t_end=1e-6,
@@ -228,8 +92,8 @@ def cvsolve(
     rxn_indices: Optional[list[int]] = None,
     spec_indices: Optional[list[int]] = None,
     db: Optional[SimulationDatabase] = None,
-    batch_threshold: int = 10_000,
     run_no: int = 1,
+    method: Solver = "Radau",
 ):
     """
     Solves the ODE system defined in CVSys, taking the gas object input as the
@@ -266,6 +130,8 @@ def cvsolve(
             P = pressure profile array
             speciesY = species mass fraction array
             speciesX = species mole fraction array
+            creation_rate = species creation rate array
+            concentration = species concentration array
             
             gas = working gas object
             
@@ -285,10 +151,10 @@ def cvsolve(
 
     # noinspection PyTypeChecker
     out: OdeResult = solve_ivp(
-        CVSys(gas, rxn_indices, spec_indices, db, batch_threshold, run_no),
+        CVSys(gas),
         tel,
         y0,
-        method='Radau',
+        method=method,
         atol=absTol,
         rtol=relTol,
         max_step=max_step,
@@ -310,7 +176,7 @@ def cvsolve(
     temp_grad = np.zeros(b)
     
     #############################################################################
-    # Extract PRESSSURE and TEMPERATURE GRADIENT
+    # Extract PRESSURE and TEMPERATURE GRADIENT
     #############################################################################
     
     # Have to loop for operations involving the working gas object
@@ -326,6 +192,43 @@ def cvsolve(
         temp_grad[i] = -s/(r0*gas.cv_mass)
         output['P'][i] = gas.P
         output['speciesX'][:, i] = gas.X
+
+        if db is not None:
+            db.bulk_properties.insert_or_update(
+                BulkPropertiesData(
+                    condition_id=db.conditions_id,
+                    run_no=run_no,
+                    time=output["time"][i],
+                    temperature=gas.T,
+                    pressure=gas.P,
+                ), commit=False)
+            if spec_indices is not None:
+                for idx_spec in spec_indices:
+                    species = gas.species(idx_spec)
+                    db.species.insert_or_update(SpeciesData(
+                        condition_id=db.conditions_id,
+                        run_no=run_no,
+                        time=output["time"][i],
+                        species=species,
+                        mole_frac=gas.mole_fraction_dict().get(species.name, 0),
+                        concentration=gas.concentrations[idx_spec],
+                        creation_rate=gas.creation_rates[idx_spec],
+                    ), commit=False)
+            if rxn_indices is not None:
+                for idx_rxn in rxn_indices:
+                    db.reactions.insert_or_update(ReactionData(
+                        condition_id=db.conditions_id,
+                        run_no=run_no,
+                        time=output["time"][i],
+                        reaction=gas.reaction_equation(idx_rxn),
+                        fwd_rate_constant=gas.forward_rate_constants[idx_rxn],
+                        fwd_rate_of_progress=gas.forward_rates_of_progress[idx_rxn],
+                    ), commit=False)
+
+    if db is not None:
+        db.bulk_properties.cur.connection.commit()
+        db.species.cur.connection.commit()
+        db.reactions.cur.connection.commit()
 
     n = temp_grad.argmax()
 

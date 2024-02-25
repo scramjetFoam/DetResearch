@@ -42,14 +42,24 @@ class SqliteDataBase:
 
 
 class SqliteTable:
-    def __init__(self, db: SqliteDataBase, table_name: str):
+    def __init__(self, db: SqliteDataBase, table_name: str, clear_existing_data: bool = False):
         self.db = db
         self.cur = self.db.con.cursor()
         self.name = table_name
+        if self.table_exists() and clear_existing_data:
+            self.__clear()
 
     def table_exists(self) -> bool:
         self.cur.execute("select name from sqlite_master where type='table' and name=:name", {"name": self.name})
         return self.cur.fetchone() is not None
+
+    @retry(sqlite3.OperationalError, tries=10, backoff=2, max_delay=2)
+    def __clear(self):
+        self.cur.execute(
+            f"""
+            DROP TABLE IF EXISTS {self.name};
+            """
+        )
 
 
 @dataclasses.dataclass
@@ -68,10 +78,9 @@ class Conditions:
 
 
 class ConditionTable(SqliteTable):
-    def __init__(self, db: SqliteDataBase):
-        super().__init__(db=db, table_name=TableName.Conditions.value)
+    def __init__(self, db: SqliteDataBase, clear_existing_data: bool = False):
+        super().__init__(db=db, table_name=TableName.Conditions.value, clear_existing_data=clear_existing_data)
         if not self.table_exists():
-            self.__clear()
             self.__create()
 
     @retry(sqlite3.OperationalError, tries=10, backoff=2, max_delay=2)
@@ -80,6 +89,8 @@ class ConditionTable(SqliteTable):
             f"""
             CREATE TABLE IF NOT EXISTS {self.name} (
                 id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                start DATETIME NOT NULL,
+                end DATETIME,
                 sim_type TEXT NOT NULL,
                 mech TEXT NOT NULL,
                 match TEXT,
@@ -95,16 +106,9 @@ class ConditionTable(SqliteTable):
                 temp_west REAL,
                 t_ind REAL,
                 u_znd REAL,
-                u_cj REAL
+                u_cj REAL,
+                cell_size REAL
             );
-            """
-        )
-
-    @retry(sqlite3.OperationalError, tries=10, backoff=2, max_delay=2)
-    def __clear(self):
-        self.cur.execute(
-            f"""
-            DROP TABLE IF EXISTS {self.name};
             """
         )
 
@@ -118,6 +122,8 @@ class ConditionTable(SqliteTable):
             f"""
             INSERT INTO {self.name} VALUES (
                 Null,
+                CURRENT_TIMESTAMP,
+                Null,
                 :sim_type,
                 :mech,
                 :match,
@@ -129,6 +135,7 @@ class ConditionTable(SqliteTable):
                 :equivalence,
                 :diluent,
                 :dil_mf,
+                Null,
                 Null,
                 Null,
                 Null,
@@ -153,8 +160,8 @@ class BulkPropertiesData:
 
 
 class BulkPropertiesTable(SqliteTable):
-    def __init__(self, db: SqliteDataBase):
-        super().__init__(db=db, table_name=TableName.BulkProperties.value)
+    def __init__(self, db: SqliteDataBase, clear_existing_data: bool = False):
+        super().__init__(db=db, table_name=TableName.BulkProperties.value, clear_existing_data=clear_existing_data)
         if not self.table_exists():
             self.__create()
 
@@ -217,8 +224,8 @@ class ReactionData:
 
 
 class ReactionTable(SqliteTable):
-    def __init__(self, db: SqliteDataBase):
-        super().__init__(db=db, table_name=TableName.Reactions.value)
+    def __init__(self, db: SqliteDataBase, clear_existing_data: bool = False):
+        super().__init__(db=db, table_name=TableName.Reactions.value, clear_existing_data=clear_existing_data)
         if not self.table_exists():
             self.__create()
 
@@ -281,8 +288,8 @@ class SpeciesData:
 
 
 class SpeciesTable(SqliteTable):
-    def __init__(self, db: SqliteDataBase):
-        super().__init__(db=db, table_name=TableName.Species.value)
+    def __init__(self, db: SqliteDataBase, clear_existing_data: bool = False):
+        super().__init__(db=db, table_name=TableName.Species.value, clear_existing_data=clear_existing_data)
         if not self.table_exists():
             self.__create()
 
@@ -358,3 +365,14 @@ class SimulationDatabase:
         self.reactions = ReactionTable(self.db)
         self.species = SpeciesTable(self.db)
         self.bulk_properties = BulkPropertiesTable(self.db)
+
+
+def clear_simulation_database(path: str):
+    """
+    Convenience function to make resets easier between simulation re-runs
+    """
+    db = SqliteDataBase(path=path)
+    _ = ConditionTable(db, clear_existing_data=True)
+    _ = ReactionTable(db, clear_existing_data=True)
+    _ = SpeciesTable(db, clear_existing_data=True)
+    _ = BulkPropertiesTable(db, clear_existing_data=True)

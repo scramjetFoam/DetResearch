@@ -1,6 +1,5 @@
 import os
 
-import funcs
 import numpy as np
 import pandas as pd
 import seaborn as sns
@@ -8,6 +7,7 @@ from matplotlib import pyplot as plt
 from scipy.stats import linregress
 from uncertainties import unumpy as unp
 
+import funcs
 
 d_drive = funcs.dir.d_drive
 PLOT_FILETYPE = "pdf"
@@ -49,28 +49,34 @@ plt.rcParams["figure.dpi"] = DPI
 
 def load_cell_size_data():
     with pd.HDFStore(os.path.join("..", "simulation_measurement_comparison", "simulated_and_measured.h5")) as store:
-        data = store.data_fixed_uncert_with_co2e[[
-            "diluent",
-            "phi_nom",
-            "phi",
-            "u_phi",
-            "dil_mf_nom",
-            "dil_mf",
-            "u_dil_mf",
-            "dil_mf_co2e",
-            "u_dil_mf_co2e",
-            "wave_speed",
-            "u_wave_speed",
-            "cell_size_measured",
-            "u_cell_size_measured",
-            "cell_size_westbrook",
-        ]]
+        data = store.data_fixed_uncert_with_co2e[
+            [
+                "diluent",
+                "phi_nom",
+                "phi",
+                "u_phi",
+                "dil_mf_nom",
+                "dil_mf",
+                "u_dil_mf",
+                "dil_mf_co2e",
+                "u_dil_mf_co2e",
+                "wave_speed",
+                "u_wave_speed",
+                "cell_size_measured",
+                "u_cell_size_measured",
+                "cell_size_westbrook",
+            ]
+        ]
 
-    data.rename({
-        "cell_size_measured": "measured",
-        "cell_size_westbrook": "simulated",
-        "u_cell_size_measured": "u_cell_size",
-    }, axis=1, inplace=True)
+    data.rename(
+        {
+            "cell_size_measured": "measured",
+            "cell_size_westbrook": "simulated",
+            "u_cell_size_measured": "u_cell_size",
+        },
+        axis=1,
+        inplace=True,
+    )
     data = data.melt(
         id_vars=[
             "diluent",
@@ -96,24 +102,26 @@ def load_cell_size_data():
 
 
 def load_wave_speed_data():
-    data = pd.read_csv(os.path.join("..", "cj_study", "cj_tad_ss_results_with_co2e.csv"))[[
-        "fuel",
-        "oxidizer",
-        "diluent",
-        "phi_nom",
-        "phi",
-        "u_phi",
-        "dil_mf_nom",
-        "dil_mf",
-        "u_dil_mf",
-        "dil_mf_co2e",
-        "u_dil_mf_co2e",
-        "wave_speed",
-        "u_wave_speed",
-        "cj_speed",
-        "sound_speed",
-        "t_ad",
-    ]]
+    data = pd.read_csv(os.path.join("..", "cj_study", "cj_tad_ss_results_with_co2e.csv"))[
+        [
+            "fuel",
+            "oxidizer",
+            "diluent",
+            "phi_nom",
+            "phi",
+            "u_phi",
+            "dil_mf_nom",
+            "dil_mf",
+            "u_dil_mf",
+            "dil_mf_co2e",
+            "u_dil_mf_co2e",
+            "wave_speed",
+            "u_wave_speed",
+            "cj_speed",
+            "sound_speed",
+            "t_ad",
+        ]
+    ]
 
     # Filter out unsuccessful detonations
     data = data[(data["cj_speed"].notna()) & (data["sound_speed"].notna()) & (data["wave_speed"].notna())]
@@ -396,14 +404,25 @@ def plot_ss_normalized_wave_speeds(wave_speed_data: pd.DataFrame):
 
     # Regression summary table
     # todo: show how close these curve fits are statistically
-    pd.DataFrame({
-        "CO2": {"slope": co2_regression.slope, "intercept": co2_regression.intercept,
-                "R$^{2}$": co2_regression.rvalue ** 2},
-        "N2": {"slope": n2_regression.slope, "intercept": n2_regression.intercept,
-               "R$^{2}$": n2_regression.rvalue ** 2},
-        "Combined": {"slope": total_regression.slope, "intercept": total_regression.intercept,
-                     "R$^{2}$": total_regression.rvalue ** 2},
-    }).to_csv(os.path.join(CSV_LOCATION, "normalized_curve_fit_summary.csv"))
+    pd.DataFrame(
+        {
+            "CO2": {
+                "slope": co2_regression.slope,
+                "intercept": co2_regression.intercept,
+                "R$^{2}$": co2_regression.rvalue**2,
+            },
+            "N2": {
+                "slope": n2_regression.slope,
+                "intercept": n2_regression.intercept,
+                "R$^{2}$": n2_regression.rvalue**2,
+            },
+            "Combined": {
+                "slope": total_regression.slope,
+                "intercept": total_regression.intercept,
+                "R$^{2}$": total_regression.rvalue**2,
+            },
+        }
+    ).to_csv(os.path.join(CSV_LOCATION, "normalized_curve_fit_summary.csv"))
 
     sns.despine()
     plt.tight_layout()
