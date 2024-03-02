@@ -221,6 +221,9 @@ class ReactionData:
     reaction: str
     fwd_rate_constant: float
     fwd_rate_of_progress: float
+    rev_rate_constant: float
+    rev_rate_of_progress: float
+    net_rate_of_progress: float
 
 
 class ReactionTable(SqliteTable):
@@ -240,6 +243,9 @@ class ReactionTable(SqliteTable):
                 reaction TEXT NOT NULL,
                 fwd_rate_constant REAL NOT NULL,
                 fwd_rate_of_progress REAL NOT NULL,
+                rev_rate_constant REAL NOT NULL,
+                rev_rate_of_progress REAL NOT NULL,
+                net_rate_of_progress REAL NOT NULL,
                 PRIMARY KEY (condition_id, run_no, time, reaction),
                 FOREIGN KEY(condition_id) REFERENCES {TableName.Conditions.value}(id)
                 ON UPDATE CASCADE ON DELETE CASCADE
@@ -257,11 +263,17 @@ class ReactionTable(SqliteTable):
                 :time,
                 :reaction,
                 :fwd_rate_constant,
-                :fwd_rate_of_progress
+                :fwd_rate_of_progress,
+                :rev_rate_constant,
+                :rev_rate_of_progress,
+                :net_rate_of_progress
             )
             ON CONFLICT(condition_id, run_no, time, reaction) DO UPDATE SET
                 fwd_rate_constant=excluded.fwd_rate_constant,
-                fwd_rate_of_progress=excluded.fwd_rate_of_progress;
+                fwd_rate_of_progress=excluded.fwd_rate_of_progress,
+                rev_rate_constant=excluded.rev_rate_constant,
+                rev_rate_of_progress=excluded.rev_rate_of_progress,
+                net_rate_of_progress=excluded.net_rate_of_progress;
             """,
             {
                 "condition_id": data.condition_id,
@@ -270,6 +282,9 @@ class ReactionTable(SqliteTable):
                 "reaction": data.reaction,
                 "fwd_rate_constant": data.fwd_rate_constant,
                 "fwd_rate_of_progress": data.fwd_rate_of_progress,
+                "rev_rate_constant": data.rev_rate_constant,
+                "rev_rate_of_progress": data.rev_rate_of_progress,
+                "net_rate_of_progress": data.net_rate_of_progress,
             },
         )
         if commit:
@@ -285,6 +300,8 @@ class SpeciesData:
     mole_frac: float
     concentration: float
     creation_rate: float
+    destruction_rate: float
+    net_production_rate: float
 
 
 class SpeciesTable(SqliteTable):
@@ -305,6 +322,8 @@ class SpeciesTable(SqliteTable):
                 mole_frac REAL NOT NULL,
                 concentration REAL NOT NULL,
                 creation_rate REAL NOT NULL,
+                destruction_rate REAL NOT NULL,
+                net_production_rate REAL NOT NULL,
                 PRIMARY KEY (condition_id, run_no, time, species),
                 FOREIGN KEY(condition_id) REFERENCES {TableName.Conditions.value}(id)
                 ON UPDATE CASCADE ON DELETE CASCADE
@@ -323,12 +342,16 @@ class SpeciesTable(SqliteTable):
                 :species,
                 :mole_frac,
                 :concentration,
-                :creation_rate
+                :creation_rate,
+                :destruction_rate,
+                :net_production_rate
             )
             ON CONFLICT(condition_id, run_no, time, species) DO UPDATE SET
                 mole_frac=excluded.mole_frac,
                 concentration=excluded.concentration,
-                creation_rate=excluded.creation_rate;
+                creation_rate=excluded.creation_rate,
+                destruction_rate=excluded.destruction_rate,
+                net_production_rate=excluded.net_production_rate;
             """,
             {
                 "condition_id": data.condition_id,
@@ -338,6 +361,8 @@ class SpeciesTable(SqliteTable):
                 "mole_frac": data.mole_frac,
                 "concentration": data.concentration,
                 "creation_rate": data.creation_rate,
+                "destruction_rate": data.destruction_rate,
+                "net_production_rate": data.net_production_rate,
             }
         )
         if commit:

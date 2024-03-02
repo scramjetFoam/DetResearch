@@ -267,6 +267,8 @@ def zndsolve(
                         mole_frac=gas.mole_fraction_dict().get(species.name, 0),
                         concentration=gas.concentrations[idx_spec],
                         creation_rate=gas.creation_rates[idx_spec],
+                        destruction_rate=gas.destruction_rates[idx_spec],
+                        net_production_rate=gas.net_production_rates[idx_spec],
                     ), commit=False)
             if rxn_indices is not None:
                 for idx_rxn in rxn_indices:
@@ -277,6 +279,9 @@ def zndsolve(
                         reaction=gas.reaction_equation(idx_rxn),
                         fwd_rate_constant=gas.forward_rate_constants[idx_rxn],
                         fwd_rate_of_progress=gas.forward_rates_of_progress[idx_rxn],
+                        rev_rate_constant=gas.reverse_rate_constants[idx_rxn],
+                        rev_rate_of_progress=gas.reverse_rates_of_progress[idx_rxn],
+                        net_rate_of_progress=gas.net_rates_of_progress[idx_rxn],
                     ), commit=False)
 
     if db is not None:
