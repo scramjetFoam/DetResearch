@@ -255,4 +255,5 @@ error_log_*
 *.h5
 
 scripts/final_manuscript/plots/
+notes/
 
