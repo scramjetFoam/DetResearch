@@ -357,11 +357,10 @@ class SimulationPlots:
 
         # these need to match self_rows in self._create_plots(), and are set using setattr()
         # noinspection PyTypeChecker
-        self.co2: SimulationPlotRow = None
+        self.co2: SimulationPlotRow = None  # set in _create_plots
+        self.n2_mf: Optional[SimulationPlotRow] = None
         # noinspection PyTypeChecker
-        self.n2_mf: SimulationPlotRow = None
-        # noinspection PyTypeChecker
-        self.n2_tad: SimulationPlotRow = None
+        self.n2_tad: SimulationPlotRow = None  # set in _create_plots
 
         plot_velocity = condition_ids.sim_type == "znd"
 
