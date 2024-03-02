@@ -16,6 +16,7 @@ import dataclasses
 from typing import Optional
 
 import cantera as ct
+import matplotlib.pyplot as plt
 import numpy as np
 
 import sdtoolbox
@@ -44,6 +45,12 @@ class ZndResult:
     induction_length: float
     max_thermicity: float
     velocity: float
+
+    # these are just to help with simulation parameter tuning
+    step: float
+    end_time: float
+    tries: int
+    max_temp_time: float
 
 
 @dataclasses.dataclass(frozen=True)
@@ -115,16 +122,20 @@ def wrapped_cvsolve(
                 max_step *= 2
         else:
             # let it break if it's gonna break after max tries
-            out = sdtoolbox.cv.cvsolve(
-                gas,
-                t_end=t_end,
-                max_step=max_step,
-                rxn_indices=rxn_indices,
-                spec_indices=spec_indices,
-                db=db,
-                run_no=tries,
-                method=config.solver_method
-            )
+            try:
+                out = sdtoolbox.cv.cvsolve(
+                    gas,
+                    t_end=t_end,
+                    max_step=max_step,
+                    rxn_indices=rxn_indices,
+                    spec_indices=spec_indices,
+                    db=db,
+                    run_no=tries,
+                    method=config.solver_method
+                )
+            except:
+                print(f"\nCV Simulation failed\ntries:    {tries}\nend time: {t_end}\nmax step: {max_step}\n")
+                raise
 
     if induction_time_only:
         return CvResult(
@@ -181,22 +192,33 @@ def wrapped_zndsolve(
                 max_step /= 10.
         else:
             # let it break if it's gonna break after max tries
-            out = sdtoolbox.znd.zndsolve(
-                gas,
-                base_gas,
-                cj_speed,
-                advanced_output=True,
-                t_end=config.end_time,
-                max_step=max_step,
-                rxn_indices=rxn_indices,
-                spec_indices=spec_indices,
-                db=db,
-                run_no=tries,
-            )
+            try:
+                out = sdtoolbox.znd.zndsolve(
+                    gas,
+                    base_gas,
+                    cj_speed,
+                    advanced_output=True,
+                    t_end=config.end_time,
+                    max_step=max_step,
+                    rxn_indices=rxn_indices,
+                    spec_indices=spec_indices,
+                    db=db,
+                    run_no=tries,
+                )
+            except:
+                print(
+                    f"\nZND Simulation failed\ntries:    {tries}\nend time: {config.end_time}\nmax step: {max_step}\n"
+                )
+                raise
+
     return ZndResult(
         induction_length=out["ind_len_ZND"],
         max_thermicity=out["thermicity"].max(),
         velocity=out["U"][0],
+        step=max_step,
+        end_time=config.end_time,
+        tries=tries,
+        max_temp_time=out["time"][np.argmax(out["T"])]
     )
 
 
@@ -217,6 +239,12 @@ class CellSizeResults:
     gavrikov_criteria_met: bool
     reaction_equation: str
     k_i: float
+
+    # temporary -- these will help me dial in simulation parameters
+    znd_step: Optional[float] = None
+    znd_end_time: Optional[float] = None
+    znd_tries: Optional[int] = None
+    znd_max_temp_time: Optional[float] = None
 
     @staticmethod
     def empty():
@@ -254,6 +282,7 @@ def calculate(
     max_tries_cv: int = 15,
     cv_end_time: float = 1e-6,
     max_step_cv: float = 5e-7,
+    znd_end_time: float = 2e-3,
 ) -> CellSizeResults:
     # leaving the call signature for this alone for now in case I need old stuff to work. Not production software.
     cv_config = CvConfig(
@@ -265,7 +294,7 @@ def calculate(
     znd_config = ZndConfig(
         max_tries=max_tries_znd,
         max_step=max_step_znd,
-        end_time=2e-3,
+        end_time=znd_end_time,
     )
 
     base_gas = build_gas_object(
@@ -399,7 +428,16 @@ def calculate(
 
     #  Westbrook time based on 50% temperature rise
     temp_west = 0.5*(temp_final - temp_vn) + temp_vn
-    t_west = np.nanmax(cv_out_0.time[cv_out_0.temperature < temp_west], initial=0)
+
+    mask = cv_out_0.temperature <= temp_west
+    t_left = cv_out_0.time[mask][-1]
+    temp_left = cv_out_0.temperature[mask][-1]
+
+    mask = cv_out_0.temperature > temp_west
+    t_right = cv_out_0.time[mask][0]
+    temp_right = cv_out_0.temperature[mask][0]
+
+    t_west = t_left + ((t_right - t_left) * (temp_west - temp_left)) / (temp_right - temp_left)
 
     # Ng et al definition of max thermicity width
     # Equation 2
@@ -435,6 +473,10 @@ def calculate(
         gavrikov_criteria_met=gavrikov_criteria_met,
         reaction_equation=reaction_equation,
         k_i=k_i,
+        znd_step=znd_result.step,
+        znd_end_time=znd_result.end_time,
+        znd_tries=znd_result.tries,
+        znd_max_temp_time=znd_result.max_temp_time
     )
 
 

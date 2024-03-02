@@ -116,11 +116,22 @@ def simulate_single_condition(idx_and_row: pd.Series):
             diluent=dil,
             diluent_mol_frac=dil_mf,
             cj_speed=cj_speed,
+            # cv_end_time=12e-6,
+            # max_step_cv=1e-6,
+            # max_tries_cv=1,
+            # max_step_znd=1e-4,
+            # max_tries_znd=5,
+            # znd_end_time=5e-4,
         )
         row["cell_size_gavrikov"] = simulated.cell_size.gavrikov * 1000  # m -> mm
         row["cell_size_ng"] = simulated.cell_size.ng * 1000  # m -> mm
         row["cell_size_westbrook"] = simulated.cell_size.westbrook * 1000  # m -> mm
         row["gavrikov_criteria_met"] = simulated.gavrikov_criteria_met
+
+        row["znd_step"] = simulated.znd_step
+        row["znd_end_time"] = simulated.znd_end_time
+        row["znd_tries"] = simulated.znd_tries
+        row["znd_max_temp_time"] = simulated.znd_max_temp_time
 
     return row
 

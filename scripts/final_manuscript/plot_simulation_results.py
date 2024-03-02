@@ -3,23 +3,12 @@ from dataclasses import dataclass
 from sqlite3 import Connection
 from typing import Literal, Optional, Union
 
+import matplotlib as mpl
 import pandas as pd
-import seaborn as sns
 from matplotlib import pyplot as plt
 from matplotlib.ticker import FuncFormatter
 
-
-def set_palette():
-    # IBM colorblind safe palette from https://lospec.com/palette-list/ibm-color-blind-safe
-    colors = [
-        "#648fff",  # temperature
-        "#ffb000",  # pressure
-        "#785ef0",  # rxn/spec
-        "#dc267f",  # rxn/spec
-        "#000000",  # rxn/spec
-        "#fe6100",  # rxn/spec
-    ]
-    sns.set_palette(colors)
+from scripts.final_manuscript.plot_settings import set_palette, set_style
 
 
 def load_conditions_data(con: Connection) -> pd.DataFrame:
@@ -39,6 +28,9 @@ def load_reactions_data(con: Connection) -> pd.DataFrame:
             rc.time,
             rc.fwd_rate_constant,
             rc.fwd_rate_of_progress,
+            rc.rev_rate_constant,
+            rc.rev_rate_of_progress,
+            rc.net_rate_of_progress,
             b.temperature,
             b.pressure,
             b.velocity
@@ -78,6 +70,8 @@ def load_species_data(con: Connection) -> pd.DataFrame:
             rc.mole_frac,
             rc.concentration,
             rc.creation_rate,
+            rc.destruction_rate,
+            rc.net_production_rate,
             b.temperature,
             b.pressure,
             b.velocity
@@ -147,6 +141,20 @@ class DataColumnSpecies:
         data_type="species",
         offset=1e8,
     )
+    destruction_rate = DataColumn(
+        column_name="destruction_rate",
+        plot_name="Destruction Rate",
+        units=r"\frac{ \mathrm{kmol} }{ \mathrm{m}^{3} \cdot \mathrm{s} }",
+        data_type="species",
+        offset=1e8,
+    )
+    net_production_rate = DataColumn(
+        column_name="net_production_rate",
+        plot_name="Net Production Rate",
+        units=r"\frac{ \mathrm{kmol} }{ \mathrm{m}^{3} \cdot \mathrm{s} }",
+        data_type="species",
+        offset=1e8,
+    )
 
 
 class DataColumnReaction:
@@ -160,6 +168,27 @@ class DataColumnReaction:
     fwd_rate_of_progress = DataColumn(
         column_name="fwd_rate_of_progress",
         plot_name="Forward Rate of Progress",
+        units=r"\frac{ \mathrm{kmol} }{ \mathrm{m}^{3} \cdot \mathrm{s} }",
+        data_type="reaction",
+        offset=1e6,
+    )
+    rev_rate_constant = DataColumn(
+        column_name="rev_rate_constant",
+        plot_name="Reverse Rate Constant",
+        units=None,
+        data_type="reaction",
+        offset=1e9,
+    )
+    rev_rate_of_progress = DataColumn(
+        column_name="rev_rate_of_progress",
+        plot_name="Reverse Rate of Progress",
+        units=r"\frac{ \mathrm{kmol} }{ \mathrm{m}^{3} \cdot \mathrm{s} }",
+        data_type="reaction",
+        offset=1e6,
+    )
+    net_rate_of_progress = DataColumn(
+        column_name="net_rate_of_progress",
+        plot_name="Net Rate of Progress",
         units=r"\frac{ \mathrm{kmol} }{ \mathrm{m}^{3} \cdot \mathrm{s} }",
         data_type="reaction",
         offset=1e6,
@@ -285,7 +314,7 @@ class SimulationPlot:
         self.temperature.legend(lines, labels, loc=5, fontsize=self._legend_fontsize)
 
         # reaction/species plots
-        color_indices = [2, 3, 4, 5]
+        color_indices = [2, 3, 4, 5, 6, 7]
         n_colors = len(color_indices)
         line_styles = ["-", "--", "-.", ":"]
         n_styles = len(line_styles)
@@ -294,7 +323,7 @@ class SimulationPlot:
             color_idx = color_indices[i % n_colors]
             # if we expand the number of reactions/species and need more differentiation between lines, we can always
             # cycle through styles at a slower rate
-            ls = line_styles[i % n_styles]
+            ls = line_styles[(i // n_colors) % n_styles]
             lines += self.results.plot(
                 data_group["time"],
                 data_group[data_column.column_name] / (data_column.offset or 1),
@@ -589,8 +618,11 @@ def get_condition_ids(conditions: pd.DataFrame) -> tuple[PlotConditions]:
 
 def main():
     set_palette()
-    show_plots = False
-    save_plots = True
+    set_style()
+    mpl.rcParams["lines.linewidth"] = 1
+
+    show_plots = True
+    save_plots = False
     show_title = True
     ignore_middle_plot = True
 
@@ -604,11 +636,19 @@ def main():
     all_condition_ids = get_condition_ids(conditions)
     all_data_sources = (reactions, species)
     all_data_columns = (
-        (DataColumnReaction.fwd_rate_of_progress, DataColumnReaction.fwd_rate_constant),
+        (
+            DataColumnReaction.fwd_rate_of_progress,
+            DataColumnReaction.fwd_rate_constant,
+            DataColumnReaction.rev_rate_constant,
+            DataColumnReaction.rev_rate_of_progress,
+            DataColumnReaction.net_rate_of_progress,
+        ),
         (
             DataColumnSpecies.concentration,
             DataColumnSpecies.creation_rate,
             DataColumnSpecies.mole_frac,
+            DataColumnSpecies.destruction_rate,
+            DataColumnSpecies.net_production_rate,
         ),
     )
     for data_source, data_columns in zip(all_data_sources, all_data_columns):
