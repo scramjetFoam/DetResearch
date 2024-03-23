@@ -103,11 +103,11 @@ class ConditionTable(SqliteTable):
                 diluent TEXT,
                 dil_mf REAL NOT NULL,
                 temp_vn REAL,
-                temp_west REAL,
                 t_ind REAL,
                 u_znd REAL,
                 u_cj REAL,
-                cell_size REAL
+                cell_size REAL,
+                cell_size_2 REAL
             );
             """
         )

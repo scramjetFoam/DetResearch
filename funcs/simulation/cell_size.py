@@ -16,7 +16,6 @@ import dataclasses
 from typing import Optional
 
 import cantera as ct
-import matplotlib.pyplot as plt
 import numpy as np
 
 import sdtoolbox
@@ -227,6 +226,7 @@ class ModelResults:
     gavrikov: float
     ng: float
     westbrook: float
+    westbrook_2: Optional[float] = None
 
     def values(self) -> np.array:
         return np.array((self.gavrikov, self.ng, self.westbrook))
@@ -422,29 +422,16 @@ def calculate(
         mf_initial = 0.
     gas.equilibrate('UV')
     mf_final = gas.mole_fraction_dict()[limit_species]
-    temp_final = gas.T
     mf_gav = 0.5*(mf_initial - mf_final) + mf_final
     t_gav = np.nanmax(cv_out_0.time[cv_out_0.limit_species_mole_fraction > mf_gav], initial=0)
-
-    #  Westbrook time based on 50% temperature rise
-    temp_west = 0.5*(temp_final - temp_vn) + temp_vn
-
-    mask = cv_out_0.temperature <= temp_west
-    t_left = cv_out_0.time[mask][-1]
-    temp_left = cv_out_0.temperature[mask][-1]
-
-    mask = cv_out_0.temperature > temp_west
-    t_right = cv_out_0.time[mask][0]
-    temp_right = cv_out_0.temperature[mask][0]
-
-    t_west = t_left + ((t_right - t_left) * (temp_west - temp_left)) / (temp_right - temp_left)
 
     # Ng et al definition of max thermicity width
     # Equation 2
     chi_ng = activation_energy * znd_result.induction_length / (cj_speed_density_corrected / znd_result.max_thermicity)
 
     induction_length = ModelResults(
-        westbrook=t_west*znd_result.velocity,
+        westbrook=cv_out_0.induction_time*znd_result.velocity,
+        westbrook_2=cv_out_0.induction_time*(cj_speed - znd_result.velocity),
         gavrikov=t_gav*znd_result.velocity,
         ng=znd_result.induction_length,
     )
@@ -452,6 +439,7 @@ def calculate(
     # calculate and return cell size results
     cell_size = ModelResults(
         westbrook=_cell_size_westbrook(induction_length=induction_length.westbrook),
+        westbrook_2=_cell_size_westbrook(induction_length=induction_length.westbrook_2),
         gavrikov=_cell_size_gavrikov(
             temp_0=initial_temp,
             temp_vn=temp_vn,
@@ -594,25 +582,9 @@ def calculate_westbrook_only(
         spec_indices=spec_indices,
         db=sim_db,
     )
-
-    gas.TPX = temp_vn, press_vn, q
-    gas.equilibrate('UV')
-    temp_final = gas.T
-
-    #  Westbrook time based on 50% temperature rise
-    temp_west = 0.5*(temp_final - temp_vn) + temp_vn
-
-    mask = cv_out_0.temperature <= temp_west
-    t_left = cv_out_0.time[mask][-1]
-    temp_left = cv_out_0.temperature[mask][-1]
-
-    mask = cv_out_0.temperature > temp_west
-    t_right = cv_out_0.time[mask][0]
-    temp_right = cv_out_0.temperature[mask][0]
-
-    t_west = t_left + ((t_right - t_left) * (temp_west - temp_left)) / (temp_right - temp_left)
     induction_length = ModelResults(
-        westbrook=t_west*znd_velocity,
+        westbrook=cv_out_0.induction_time * znd_velocity,
+        westbrook_2=cv_out_0.induction_time * (cj_speed - znd_velocity),
         gavrikov=np.NaN,
         ng=np.NaN,
     )
@@ -620,6 +592,7 @@ def calculate_westbrook_only(
     # calculate and return cell size results
     cell_size = ModelResults(
         westbrook=_cell_size_westbrook(induction_length=induction_length.westbrook),
+        westbrook_2=_cell_size_westbrook(induction_length=induction_length.westbrook_2),
         gavrikov=np.NaN,
         ng=np.NaN,
     )
@@ -632,22 +605,22 @@ def calculate_westbrook_only(
                     conditions
                 SET
                     temp_vn = :temp_vn,
-                    temp_west = :temp_west,
                     t_ind = :t_ind,
                     u_znd = :u_znd,
                     u_cj = :u_cj,
                     cell_size = :cell_size,
+                    cell_size_2 = :cell_size_2,
                     end = CURRENT_TIMESTAMP
                 WHERE
                     id in ({','.join(conditions_ids)});
                 """,
                 {
                     "temp_vn": temp_vn,
-                    "temp_west": temp_west,
-                    "t_ind": t_west,
+                    "t_ind": cv_out_0.induction_time,
                     "u_znd": znd_velocity,
                     "u_cj": cj_speed,
-                    "cell_size": cell_size.westbrook
+                    "cell_size": cell_size.westbrook,
+                    "cell_size_2": _cell_size_westbrook(cv_out_0.induction_time * (cj_speed - znd_velocity))
                 }
             )
             con.commit()

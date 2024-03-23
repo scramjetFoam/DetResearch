@@ -1,7 +1,7 @@
 import sqlite3
 from dataclasses import dataclass
 from sqlite3 import Connection
-from typing import Literal, Optional, Union
+from typing import Literal, Optional, Union, Tuple
 
 import matplotlib as mpl
 import pandas as pd
@@ -253,6 +253,7 @@ class SimulationPlot:
         data_column: DataColumn,
         result_designator_column: str,
         conditions: pd.Series,
+        induction_window: Optional[float] = None,
     ):
         """
         Parameters
@@ -262,6 +263,7 @@ class SimulationPlot:
         result_designator_column : column designating reaction or species values, each of which will have a data plot
             entry
         conditions : series of current plot's test conditions and results
+        induction_window : (Optional) time in seconds - plot x scale will be set to t_ind +/- `induction_window`
         """
         plot_data = data.sort_values("time")
         time_scale = 1_000_000  # s -> us
@@ -285,14 +287,20 @@ class SimulationPlot:
             plot_data["time"], plot_data["temperature"], ls="-", color="C0", label="T"
         )
 
-        end_time = plot_data["time"].max()
-        self.temperature.set_xlim(0, end_time)
-        self.temperature.set_xlim(0, end_time)
-        self.results.set_xlim(0, end_time)
+        t_min = 0
+        t_max = plot_data["time"].max()
+        if induction_window:
+            t_ind = conditions["t_ind"]
+            t_min = max((t_ind - induction_window) * time_scale, t_min)
+            t_max = min((t_ind + induction_window) * time_scale, t_max)
+
+        self.temperature.set_xlim(t_min, t_max)
+        self.temperature.set_xlim(t_min, t_max)
+        self.results.set_xlim(t_min, t_max)
 
         if self.velocity is not None:
             self.velocity.plot(plot_data["time"], plot_data["velocity"], "C5")
-            self.velocity.set_xlim(0, end_time)
+            self.velocity.set_xlim(t_min, t_max)
             self.velocity.set_ylabel("Velocity (m/s)", fontsize=self._axis_fontsize, verticalalignment="baseline")
 
         # Induction time is determined by a temperature threshold in the CV simulations, so that is where we plot it
@@ -379,6 +387,7 @@ class SimulationPlots:
         suptitle_fontsize: int = 12,
         row_fontsize: int = 10,
         ignore_middle: bool = False,
+        induction_window: Optional[float] = None,
     ):
         # noinspection PyTypeChecker
         self._figure: plt.Figure = None
@@ -409,7 +418,7 @@ class SimulationPlots:
                 y=0.925,
             )
 
-        self._plot_data(data, data_column, condition_ids, ignore_middle)
+        self._plot_data(data, data_column, condition_ids, ignore_middle, induction_window)
 
         self._share_ylim()
 
@@ -515,6 +524,7 @@ class SimulationPlots:
         data_column: DataColumn,
         conditions: PlotConditions,
         ignore_middle: bool,
+        induction_window: Optional[float],
     ):
         is_reaction_data = "reaction" in data.columns
         is_species_data = "species" in data.columns
@@ -542,10 +552,8 @@ class SimulationPlots:
                     data_column=data_column,
                     result_designator_column=result_designator_column,
                     conditions=these_conditions,
+                    induction_window=induction_window,
                 )
-
-
-# todo: make all x, y scales identical
 
 
 def validate_sim_type(maybe: str) -> Union[Literal["cv"], Literal["znd"]]:
@@ -557,7 +565,7 @@ def validate_sim_type(maybe: str) -> Union[Literal["cv"], Literal["znd"]]:
         raise RuntimeError(f"Invalid simulation type: {maybe}")
 
 
-def get_condition_ids(conditions: pd.DataFrame) -> tuple[PlotConditions]:
+def get_condition_ids(conditions: pd.DataFrame) -> tuple[PlotConditions, ...]:
     all_condition_ids = []
     for sim_type, sim_type_conditions in conditions.groupby("sim_type"):
         all_condition_ids.append(
@@ -625,6 +633,7 @@ def main():
     save_plots = False
     show_title = True
     ignore_middle_plot = True
+    induction_window = 1e-7
 
     db_path = "/home/mick/DetResearch/scripts/final_manuscript/co2_reaction_study.sqlite"
     con = sqlite3.connect(db_path)
@@ -667,6 +676,7 @@ def main():
                     show_title=show_title,
                     save_to=save_to,
                     ignore_middle=ignore_middle_plot,
+                    induction_window=induction_window,
                 )
 
     # zoomed in
@@ -679,6 +689,7 @@ def main():
         show_title=show_title,
         save_to=f"plots/cv - {data_column.data_type}- {data_column.column_name} (zoomed).pdf",
         ignore_middle=ignore_middle_plot,
+        induction_window=induction_window,
     )
 
     if show_plots:

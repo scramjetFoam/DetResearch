@@ -10,9 +10,9 @@ sns.set_style("darkgrid")
 SCRIPT_DIR = os.path.abspath(os.path.dirname(__file__))
 
 
-def load_my_data() -> pd.DataFrame:
+def load_my_data(data_file: str = "simulated_and_measured.h5", column: str = "cell_size_westbrook") -> pd.DataFrame:
     with pd.HDFStore(
-            os.path.join(os.path.dirname(os.path.dirname(SCRIPT_DIR)), "simulated_and_measured.h5"),
+            os.path.join(os.path.dirname(os.path.dirname(SCRIPT_DIR)), data_file),
             "r",
     ) as store:
         plot_data = pd.DataFrame()
@@ -25,7 +25,7 @@ def load_my_data() -> pd.DataFrame:
                     "diluent": [row["diluent"]] * 2,
                     "phi_nom": [row["phi_nom"]] * 2,
                     "dil_mf_nom": [row["dil_mf_nom"]] * 2,
-                    "cell_size": [row["cell_size_measured"], row["cell_size_westbrook"]],
+                    "cell_size": [row["cell_size_measured"], row[column]],
                     "source": ["measurement", "simulation"],
                     "uncertainty": [row["u_cell_size_measured"], np.NaN],
                 })

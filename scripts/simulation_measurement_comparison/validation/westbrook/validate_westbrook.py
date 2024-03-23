@@ -2,7 +2,6 @@ import concurrent.futures
 import dataclasses
 import datetime
 import sys
-import time
 from concurrent.futures import ProcessPoolExecutor
 import os
 from typing import Tuple
@@ -118,6 +117,7 @@ def simulate_single_condition(idx_and_row: Tuple[int, pd.Series], error_log: str
             row["cell_size_gavrikov"] = _simulated.cell_size.gavrikov * 1000  # m -> mm
             row["cell_size_ng"] = _simulated.cell_size.ng * 1000  # m -> mm
             row["cell_size_westbrook"] = _simulated.cell_size.westbrook * 1000  # m -> mm
+            row["cell_size_westbrook_2"] = _simulated.cell_size.westbrook_2 * 1000  # m -> mm
             row["gavrikov_criteria_met"] = _simulated.gavrikov_criteria_met
         except Exception as e:
             with open(error_log, "a") as f:
@@ -163,39 +163,49 @@ def simulate_measured_conditions(df_measured: pd.DataFrame) -> pd.DataFrame:
 if __name__ == "__main__":
     data = load_all_data()
 
+    run_simulations = False
+    output_file = "westbrook_validation.h5"
+    westbrook_col = "cell_size_westbrook_2"
+
     print(f"\nloaded {len(data)} data points from literature\n")
 
-    simulated = simulate_measured_conditions(data)
-    simulated["pressure"] = pd.to_numeric(simulated["pressure"])
-    simulated["cell_size"] = pd.to_numeric(simulated["cell_size"])
-    simulated["phi"] = pd.to_numeric(simulated["phi"])
-    simulated["cell_size_gavrikov"] = pd.to_numeric(simulated["cell_size_gavrikov"])
-    simulated["cell_size_ng"] = pd.to_numeric(simulated["cell_size_ng"])
-    simulated["cell_size_westbrook"] = pd.to_numeric(simulated["cell_size_westbrook"])
+    if run_simulations:
+        simulated = simulate_measured_conditions(data)
+        simulated["pressure"] = pd.to_numeric(simulated["pressure"])
+        simulated["cell_size"] = pd.to_numeric(simulated["cell_size"])
+        simulated["phi"] = pd.to_numeric(simulated["phi"])
+        simulated["cell_size_gavrikov"] = pd.to_numeric(simulated["cell_size_gavrikov"])
+        simulated["cell_size_ng"] = pd.to_numeric(simulated["cell_size_ng"])
+        simulated["cell_size_westbrook"] = pd.to_numeric(simulated["cell_size_westbrook"])
+        simulated["cell_size_westbrook_2"] = pd.to_numeric(simulated["cell_size_westbrook_2"])
 
-    with pd.HDFStore(os.path.join(DATA_DIR, "westbrook_validation.h5"), "w") as store:
-        with warnings.catch_warnings():
-            # pandas doesn't do types well here, and frankly I'm sick of hearing about it
-            warnings.simplefilter("ignore")
-            store["data"] = simulated
+        with pd.HDFStore(os.path.join(DATA_DIR, output_file), "w") as store:
+            with warnings.catch_warnings():
+                # pandas doesn't do types well here, and frankly I'm sick of hearing about it
+                warnings.simplefilter("ignore")
+                store["data"] = simulated
+    else:
+        simulated = pd.read_hdf(os.path.join(DATA_DIR, output_file))
 
-    plot_data = pd.DataFrame()
-    for (_, row) in simulated.iterrows():
-        plot_data = pd.concat([
-            plot_data,
-            pd.DataFrame({
-                "mixture": [row["mixture"]] * 2,
-                "fuel": [row["fuel"]] * 2,
-                "oxidizer": [row["oxidizer"]] * 2,
-                "phi": [row["phi"]] * 2,
-                "pressure": [row["pressure"]] * 2,
-                "cell_size": [row["cell_size"], row["cell_size_westbrook"]],
-                "source": ["literature", "simulation"]
-            })
-        ])
+    for westbrook_col, title in zip(("cell_size_westbrook", "cell_size_westbrook_2"), ("Original", "Updated")):
+        plot_data = pd.DataFrame()
+        for (_, row) in simulated.iterrows():
+            plot_data = pd.concat([
+                plot_data,
+                pd.DataFrame({
+                    "mixture": [row["mixture"]] * 2,
+                    "fuel": [row["fuel"]] * 2,
+                    "oxidizer": [row["oxidizer"]] * 2,
+                    "phi": [row["phi"]] * 2,
+                    "pressure": [row["pressure"]] * 2,
+                    "cell_size": [row["cell_size"], row[westbrook_col]],
+                    "source": ["literature", "simulation"]
+                })
+            ])
 
-    grid = sns.relplot(x="pressure", y="cell_size", style="source", row="mixture", data=plot_data, kind="scatter")
-    grid.set(xscale="log", yscale="log")
-    for ax in grid.axes[0]:
-        ax.invert_xaxis()
+        grid = sns.relplot(x="pressure", y="cell_size", style="source", row="mixture", data=plot_data, kind="scatter")
+        grid.set(xscale="log", yscale="log")
+        grid.fig.canvas.manager.set_window_title(title)
+        for ax in grid.axes[0]:
+            ax.invert_xaxis()
     plt.show()

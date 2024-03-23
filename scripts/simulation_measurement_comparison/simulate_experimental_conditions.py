@@ -119,13 +119,14 @@ def simulate_single_condition(idx_and_row: pd.Series):
             # cv_end_time=12e-6,
             # max_step_cv=1e-6,
             # max_tries_cv=1,
-            # max_step_znd=1e-4,
+            max_step_znd=1e-4,
             # max_tries_znd=5,
-            # znd_end_time=5e-4,
+            znd_end_time=5e-4,
         )
         row["cell_size_gavrikov"] = simulated.cell_size.gavrikov * 1000  # m -> mm
         row["cell_size_ng"] = simulated.cell_size.ng * 1000  # m -> mm
         row["cell_size_westbrook"] = simulated.cell_size.westbrook * 1000  # m -> mm
+        row["cell_size_westbrook_2"] = simulated.cell_size.westbrook_2 * 1000  # m -> mm
         row["gavrikov_criteria_met"] = simulated.gavrikov_criteria_met
 
         row["znd_step"] = simulated.znd_step
