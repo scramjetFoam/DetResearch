@@ -30,7 +30,7 @@ def get_important_reaction_indices(gas: ct.Solution) -> list[int]:
 
 def get_important_species_indices(gas: ct.Solution) -> list[int]:
     species_indices = []
-    for spec in ["CH4", "O2", "O", "N2", "CO2", "OH", "H"]:
+    for spec in ["O2", "O", "N2", "CO2", "CO", "OH", "H"]:
         try:
             species_indices.append(gas.species_index(spec))
         except ValueError:
