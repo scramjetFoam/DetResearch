@@ -45,6 +45,7 @@ def plot(data: pd.DataFrame, show_title: bool, save_plot: bool):
         data=data,
         kind="scatter",
         zorder=2,
+        facet_kws=dict(sharey="row"),
     )
     grid.fig.set_size_inches((11, 8.5))
     if show_title:
