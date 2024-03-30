@@ -299,13 +299,16 @@ class SimulationPlot:
         t_max = plot_data["time"].max()
         if induction_window:
             # we want windowed plots to go below zero
-            t_min = -1e6
             induction_time = 0
-            t_min = max(-induction_window * time_scale, t_min)
-            t_max = min(induction_window * time_scale, t_max)
+            t_min = -induction_window * time_scale
+            t_max = 0  # not centered
         else:
             t_min = 0
             induction_time = conditions.t_ind * time_scale
+
+        # Prevent post-induction data from throwing off my y-axis scaling.
+        # I'm not worried about t_min since that's a flat tail anyway.
+        plot_data = plot_data[plot_data["time"] <= t_max]
 
         self.temperature.set_xlim(t_min, t_max)
         self.temperature.set_xlim(t_min, t_max)
@@ -317,9 +320,9 @@ class SimulationPlot:
             self.velocity.set_ylabel("Velocity (m/s)", fontsize=self._axis_fontsize, verticalalignment="baseline")
 
         # Induction time is determined by a temperature threshold in the CV simulations, so that is where we plot it
-        if conditions.sim_type == "cv":
-            for ax in (self.temperature, self.results):
-                ax.axvspan(t_min, induction_time, zorder=-1, color="#eee")
+        # if conditions.sim_type == "cv":
+        #     for ax in (self.temperature, self.results):
+        #         ax.axvspan(t_min, induction_time, zorder=-1, color="#eee")
 
         self.pressure.set_ylabel(
             f"Pressure (Pa)\nx{press_scale}", fontsize=self._axis_fontsize, verticalalignment="top"
@@ -331,7 +334,7 @@ class SimulationPlot:
         lines = line_pressure + line_temperature
         labels = [line.get_label() for line in lines]
         # we should be able to set this on temperature or pressure since they share a subplot
-        self.temperature.legend(lines, labels, loc=5, fontsize=self._legend_fontsize)
+        self.temperature.legend(lines, labels, fontsize=self._legend_fontsize)
 
         # reaction/species plots
         color_indices = [2, 3, 4, 5, 6, 7]
@@ -907,10 +910,10 @@ def main():
     mpl.rcParams["lines.linewidth"] = 1
 
     db_path = "/home/mick/DetResearch/scripts/final_manuscript/co2_reaction_study.sqlite"
-    show_plots = True
+    show_plots = False
     induction_window = 1e-7
     plot_args = PlotArgs(
-        save_plots=False,
+        save_plots=True,
         show_title=True,
         n2_row=NitrogenRow.tad,
         con=sqlite3.connect(db_path)
