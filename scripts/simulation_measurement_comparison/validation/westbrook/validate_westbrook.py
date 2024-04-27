@@ -142,7 +142,7 @@ def simulate_measured_conditions(df_measured: pd.DataFrame) -> pd.DataFrame:
     with ProcessPoolExecutor() as executor:
         with tqdm(total=n_meas, unit="calc", file=sys.stdout, colour="green", desc="Running") as counter:
             futures = {
-                executor.submit(simulate_single_condition, idx_and_row=idx_and_row, error_log=error_log)
+                executor.submit(simulate_single_condition, idx_and_row, error_log)
                 for idx_and_row in df_measured.iterrows()
             }
             results = []
