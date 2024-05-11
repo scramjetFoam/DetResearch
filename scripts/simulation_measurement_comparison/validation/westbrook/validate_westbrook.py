@@ -79,7 +79,7 @@ def load_all_data() -> pd.DataFrame:
     return df
 
 
-def simulate_single_condition(idx_and_row: Tuple[int, pd.Series], error_log: str):
+def simulate_single_condition(idx_and_row: Tuple[int, pd.Series], error_log: str) -> Tuple[int, pd.Series]:
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         idx = idx_and_row[0]
@@ -89,7 +89,7 @@ def simulate_single_condition(idx_and_row: Tuple[int, pd.Series], error_log: str
             fuel = row["fuel"]
             oxidizer = row["oxidizer"]
             p_0 = row["pressure"]
-            t_0 = 300  # todo: verify this please
+            t_0 = 300
             gas = ct.Solution(MECH)
             gas.set_equivalence_ratio(phi, fuel, oxidizer)
             cj_speed = CJspeed(p_0, t_0, gas.mole_fraction_dict(), MECH)
@@ -141,6 +141,8 @@ def simulate_measured_conditions(df_measured: pd.DataFrame) -> pd.DataFrame:
 
     with ProcessPoolExecutor() as executor:
         with tqdm(total=n_meas, unit="calc", file=sys.stdout, colour="green", desc="Running") as counter:
+            # I promise DataFrame.iterrows() returns (int, Series) in this instance
+            # noinspection PyTypeChecker
             futures = {
                 executor.submit(simulate_single_condition, idx_and_row, error_log)
                 for idx_and_row in df_measured.iterrows()
@@ -154,7 +156,7 @@ def simulate_measured_conditions(df_measured: pd.DataFrame) -> pd.DataFrame:
             counter.set_description_str("Done")
 
     df_out = pd.DataFrame()
-    for result in sorted(results, key=lambda r: r[0]):
+    for result in sorted(results, key=lambda _r: r[0]):
         df_out = pd.concat((df_out, result[1].to_frame().T))
 
     return df_out
@@ -189,23 +191,23 @@ if __name__ == "__main__":
 
     for westbrook_col, title in zip(("cell_size_westbrook", "cell_size_westbrook_2"), ("Original", "Updated")):
         plot_data = pd.DataFrame()
-        for (_, row) in simulated.iterrows():
+        for (_, r) in simulated.iterrows():
             plot_data = pd.concat([
                 plot_data,
                 pd.DataFrame({
-                    "mixture": [row["mixture"]] * 2,
-                    "fuel": [row["fuel"]] * 2,
-                    "oxidizer": [row["oxidizer"]] * 2,
-                    "phi": [row["phi"]] * 2,
-                    "pressure": [row["pressure"]] * 2,
-                    "cell_size": [row["cell_size"], row[westbrook_col]],
+                    "mixture": [r["mixture"]] * 2,
+                    "fuel": [r["fuel"]] * 2,
+                    "oxidizer": [r["oxidizer"]] * 2,
+                    "phi": [r["phi"]] * 2,
+                    "pressure": [r["pressure"]] * 2,
+                    "cell_size": [r["cell_size"], r[westbrook_col]],
                     "source": ["literature", "simulation"]
                 })
             ])
 
         grid = sns.relplot(x="pressure", y="cell_size", style="source", row="mixture", data=plot_data, kind="scatter")
         grid.set(xscale="log", yscale="log")
-        grid.fig.canvas.manager.set_window_title(title)
+        grid.fig.canvas.manager.set_window_title(f"Westbrook Validation - {title}")
         for ax in grid.axes[0]:
             ax.invert_xaxis()
     plt.show()
